@@ -26,8 +26,6 @@ jobs:
             os: ubuntu-latest
             linker: aarch64-linux-gnu-gcc
             apt: gcc-aarch64-linux-gnu
-          - target: x86_64-apple-darwin
-            os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
