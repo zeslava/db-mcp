@@ -4,9 +4,17 @@ MCP server для PostgreSQL. Предоставляет read-only доступ 
 
 ## Установка
 
-### Из релизов
+### Быстрая установка (Linux и macOS Apple Silicon)
 
-Готовые бинарники для Linux (x86_64, aarch64), macOS (x86_64, arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/mcp-postgres/releases).
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/mcp-postgres/main/install.sh | sh
+```
+
+Скрипт автоматически определяет ОС и архитектуру, скачивает последний релиз, проверяет контрольную сумму и устанавливает бинарник в `/usr/local/bin` (или `~/.local/bin`, если `/usr/local/bin` недоступен без `sudo`).
+
+### Из релизов вручную
+
+Готовые бинарники для Linux (x86_64, aarch64), macOS (arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/mcp-postgres/releases).
 
 ```bash
 # Linux x86_64 — пример для последнего релиза
