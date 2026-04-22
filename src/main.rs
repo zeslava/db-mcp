@@ -235,11 +235,7 @@ fn pg_value_to_json(row: &tokio_postgres::Row, idx: usize) -> serde_json::Value 
     }
 }
 
-fn fallback_to_json(
-    row: &tokio_postgres::Row,
-    idx: usize,
-    col_type: &Type,
-) -> serde_json::Value {
+fn fallback_to_json(row: &tokio_postgres::Row, idx: usize, col_type: &Type) -> serde_json::Value {
     if let Ok(opt) = row.try_get::<_, Option<&str>>(idx) {
         return opt
             .map(|s| serde_json::Value::String(s.to_string()))
