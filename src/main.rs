@@ -11,6 +11,22 @@ use rmcp::{
 };
 use serde::Deserialize;
 use tokio_postgres::Client;
+use tokio_postgres::types::{FromSql, Kind, Type};
+
+struct RawBytes(Vec<u8>);
+
+impl<'a> FromSql<'a> for RawBytes {
+    fn from_sql(
+        _ty: &Type,
+        raw: &'a [u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(RawBytes(raw.to_vec()))
+    }
+
+    fn accepts(_ty: &Type) -> bool {
+        true
+    }
+}
 
 #[derive(Parser)]
 #[command(about = "MCP server for PostgreSQL")]
@@ -170,49 +186,80 @@ impl ServerHandler for PgServer {
 }
 
 fn pg_value_to_json(row: &tokio_postgres::Row, idx: usize) -> serde_json::Value {
-    use tokio_postgres::types::Type;
     let col_type = row.columns()[idx].type_();
     match col_type {
         &Type::BOOL => row
-            .try_get::<_, bool>(idx)
+            .try_get::<_, Option<bool>>(idx)
+            .ok()
+            .flatten()
             .map(serde_json::Value::Bool)
             .unwrap_or(serde_json::Value::Null),
         &Type::INT2 => row
-            .try_get::<_, i16>(idx)
+            .try_get::<_, Option<i16>>(idx)
+            .ok()
+            .flatten()
             .map(|v| serde_json::Value::Number(v.into()))
             .unwrap_or(serde_json::Value::Null),
         &Type::INT4 => row
-            .try_get::<_, i32>(idx)
+            .try_get::<_, Option<i32>>(idx)
+            .ok()
+            .flatten()
             .map(|v| serde_json::Value::Number(v.into()))
             .unwrap_or(serde_json::Value::Null),
         &Type::INT8 => row
-            .try_get::<_, i64>(idx)
+            .try_get::<_, Option<i64>>(idx)
+            .ok()
+            .flatten()
             .map(|v| serde_json::Value::Number(v.into()))
             .unwrap_or(serde_json::Value::Null),
         &Type::FLOAT4 => row
-            .try_get::<_, f32>(idx)
-            .map(|v| {
-                serde_json::Number::from_f64(v as f64)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null)
-            })
+            .try_get::<_, Option<f32>>(idx)
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::Number::from_f64(v as f64))
+            .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
         &Type::FLOAT8 => row
-            .try_get::<_, f64>(idx)
-            .map(|v| {
-                serde_json::Number::from_f64(v)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null)
-            })
+            .try_get::<_, Option<f64>>(idx)
+            .ok()
+            .flatten()
+            .and_then(serde_json::Number::from_f64)
+            .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
         &Type::JSON | &Type::JSONB => row
-            .try_get::<_, serde_json::Value>(idx)
+            .try_get::<_, Option<serde_json::Value>>(idx)
+            .ok()
+            .flatten()
             .unwrap_or(serde_json::Value::Null),
-        _ => row
-            .try_get::<_, &str>(idx)
-            .map(|s| serde_json::Value::String(s.to_string()))
-            .unwrap_or(serde_json::Value::Null),
+        _ => fallback_to_json(row, idx, col_type),
     }
+}
+
+fn fallback_to_json(
+    row: &tokio_postgres::Row,
+    idx: usize,
+    col_type: &Type,
+) -> serde_json::Value {
+    if let Ok(opt) = row.try_get::<_, Option<&str>>(idx) {
+        return opt
+            .map(|s| serde_json::Value::String(s.to_string()))
+            .unwrap_or(serde_json::Value::Null);
+    }
+
+    let raw = match row.try_get::<_, Option<RawBytes>>(idx) {
+        Ok(Some(v)) => v,
+        Ok(None) => return serde_json::Value::Null,
+        Err(_) => return serde_json::Value::Null,
+    };
+
+    // Enums and domains over text are sent as UTF-8 label bytes in the binary protocol.
+    if matches!(col_type.kind(), Kind::Enum(_) | Kind::Domain(_))
+        && let Ok(s) = std::str::from_utf8(&raw.0)
+    {
+        return serde_json::Value::String(s.to_string());
+    }
+
+    serde_json::Value::Null
 }
 
 #[tokio::main]
