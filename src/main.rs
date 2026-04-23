@@ -11,22 +11,8 @@ use rmcp::{
 };
 use serde::Deserialize;
 use tokio_postgres::Client;
-use tokio_postgres::types::{FromSql, Kind, Type};
-
-struct RawBytes(Vec<u8>);
-
-impl<'a> FromSql<'a> for RawBytes {
-    fn from_sql(
-        _ty: &Type,
-        raw: &'a [u8],
-    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
-        Ok(RawBytes(raw.to_vec()))
-    }
-
-    fn accepts(_ty: &Type) -> bool {
-        true
-    }
-}
+use tokio_postgres::SimpleQueryMessage;
+use tokio_postgres::types::Type;
 
 #[derive(Parser)]
 #[command(about = "MCP server for PostgreSQL")]
@@ -86,23 +72,35 @@ impl PgServer {
             ));
         }
 
-        let rows = self
+        let stmt = self
             .client
-            .query(trimmed, &[])
+            .prepare(trimmed)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let col_names: Vec<String> = stmt
+            .columns()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect();
+        let col_types: Vec<Type> = stmt.columns().iter().map(|c| c.type_().clone()).collect();
+
+        let messages = self
+            .client
+            .simple_query(trimmed)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        let result: Vec<serde_json::Value> = rows
-            .iter()
-            .map(|row| {
+        let mut result: Vec<serde_json::Value> = Vec::new();
+        for msg in messages {
+            if let SimpleQueryMessage::Row(row) = msg {
                 let mut obj = serde_json::Map::new();
-                for (i, col) in row.columns().iter().enumerate() {
-                    let val = pg_value_to_json(row, i);
-                    obj.insert(col.name().to_string(), val);
+                for (i, name) in col_names.iter().enumerate() {
+                    let val = text_to_json(row.get(i), col_types.get(i));
+                    obj.insert(name.clone(), val);
                 }
-                serde_json::Value::Object(obj)
-            })
-            .collect();
+                result.push(serde_json::Value::Object(obj));
+            }
+        }
 
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
@@ -185,77 +183,34 @@ impl ServerHandler for PgServer {
     }
 }
 
-fn pg_value_to_json(row: &tokio_postgres::Row, idx: usize) -> serde_json::Value {
-    let col_type = row.columns()[idx].type_();
-    match col_type {
-        &Type::BOOL => row
-            .try_get::<_, Option<bool>>(idx)
-            .ok()
-            .flatten()
-            .map(serde_json::Value::Bool)
-            .unwrap_or(serde_json::Value::Null),
-        &Type::INT2 => row
-            .try_get::<_, Option<i16>>(idx)
-            .ok()
-            .flatten()
+fn text_to_json(text: Option<&str>, col_type: Option<&Type>) -> serde_json::Value {
+    let Some(s) = text else {
+        return serde_json::Value::Null;
+    };
+    let Some(ty) = col_type else {
+        return serde_json::Value::String(s.to_string());
+    };
+    match ty {
+        &Type::BOOL => match s {
+            "t" | "true" => serde_json::Value::Bool(true),
+            "f" | "false" => serde_json::Value::Bool(false),
+            _ => serde_json::Value::String(s.to_string()),
+        },
+        &Type::INT2 | &Type::INT4 | &Type::INT8 | &Type::OID => s
+            .parse::<i64>()
             .map(|v| serde_json::Value::Number(v.into()))
-            .unwrap_or(serde_json::Value::Null),
-        &Type::INT4 => row
-            .try_get::<_, Option<i32>>(idx)
+            .unwrap_or_else(|_| serde_json::Value::String(s.to_string())),
+        &Type::FLOAT4 | &Type::FLOAT8 => s
+            .parse::<f64>()
             .ok()
-            .flatten()
-            .map(|v| serde_json::Value::Number(v.into()))
-            .unwrap_or(serde_json::Value::Null),
-        &Type::INT8 => row
-            .try_get::<_, Option<i64>>(idx)
-            .ok()
-            .flatten()
-            .map(|v| serde_json::Value::Number(v.into()))
-            .unwrap_or(serde_json::Value::Null),
-        &Type::FLOAT4 => row
-            .try_get::<_, Option<f32>>(idx)
-            .ok()
-            .flatten()
-            .and_then(|v| serde_json::Number::from_f64(v as f64))
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        &Type::FLOAT8 => row
-            .try_get::<_, Option<f64>>(idx)
-            .ok()
-            .flatten()
             .and_then(serde_json::Number::from_f64)
             .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-        &Type::JSON | &Type::JSONB => row
-            .try_get::<_, Option<serde_json::Value>>(idx)
-            .ok()
-            .flatten()
-            .unwrap_or(serde_json::Value::Null),
-        _ => fallback_to_json(row, idx, col_type),
+            .unwrap_or_else(|| serde_json::Value::String(s.to_string())),
+        &Type::JSON | &Type::JSONB => {
+            serde_json::from_str(s).unwrap_or_else(|_| serde_json::Value::String(s.to_string()))
+        }
+        _ => serde_json::Value::String(s.to_string()),
     }
-}
-
-fn fallback_to_json(row: &tokio_postgres::Row, idx: usize, col_type: &Type) -> serde_json::Value {
-    if let Ok(opt) = row.try_get::<_, Option<&str>>(idx) {
-        return opt
-            .map(|s| serde_json::Value::String(s.to_string()))
-            .unwrap_or(serde_json::Value::Null);
-    }
-
-    let raw = match row.try_get::<_, Option<RawBytes>>(idx) {
-        Ok(Some(v)) => v,
-        Ok(None) => return serde_json::Value::Null,
-        Err(_) => return serde_json::Value::Null,
-    };
-
-    // Enums and domains over text are sent as UTF-8 label bytes in the binary protocol.
-    if matches!(col_type.kind(), Kind::Enum(_) | Kind::Domain(_))
-        && let Ok(s) = std::str::from_utf8(&raw.0)
-    {
-        return serde_json::Value::String(s.to_string());
-    }
-
-    serde_json::Value::Null
 }
 
 #[tokio::main]
