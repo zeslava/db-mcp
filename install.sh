@@ -68,15 +68,30 @@ fi
 tar -xzf "$FILENAME"
 
 # ---------- установка ----------
-INSTALL_DIR=""
-if [ -w /usr/local/bin ]; then
-  INSTALL_DIR="/usr/local/bin"
-elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-  INSTALL_DIR="/usr/local/bin"
-  SUDO=sudo
-else
-  INSTALL_DIR="$HOME/.local/bin"
-  mkdir -p "$INSTALL_DIR"
+# По умолчанию ставим в ~/.local/bin (без sudo, без загрязнения системных путей).
+# Чтобы поставить в системный каталог: INSTALL_DIR=/usr/local/bin sh install.sh
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+
+SUDO=""
+if [ ! -d "$INSTALL_DIR" ]; then
+  if ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
+    if command -v sudo >/dev/null 2>&1; then
+      SUDO=sudo
+      $SUDO mkdir -p "$INSTALL_DIR"
+    else
+      echo "Cannot create ${INSTALL_DIR} and sudo is not available." >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [ -z "$SUDO" ] && [ ! -w "$INSTALL_DIR" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    SUDO=sudo
+  else
+    echo "${INSTALL_DIR} is not writable and sudo is not available." >&2
+    exit 1
+  fi
 fi
 
 ${SUDO:-} install -m 755 "${BIN}-${VERSION}-${TARGET}/${BIN}" "${INSTALL_DIR}/${BIN}"
@@ -84,13 +99,14 @@ ${SUDO:-} install -m 755 "${BIN}-${VERSION}-${TARGET}/${BIN}" "${INSTALL_DIR}/${
 echo ""
 echo "${BIN} ${VERSION} installed to ${INSTALL_DIR}/${BIN}"
 
-# Подсказка, если ~/.local/bin не в PATH
+# Подсказка, если каталог установки не в PATH
 case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ;;
+  *":${INSTALL_DIR}:"*) ;;
   *)
+    echo ""
+    echo "Warning: ${INSTALL_DIR} is not in your PATH."
     if [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; then
-      echo ""
-      echo "Add ~/.local/bin to your PATH:"
+      echo "Add it with:"
       echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.profile"
       echo "  source ~/.profile"
     fi
