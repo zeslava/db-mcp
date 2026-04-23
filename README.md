@@ -10,7 +10,14 @@ MCP server для PostgreSQL. Предоставляет read-only доступ 
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/mcp-postgres/main/install.sh | sh
 ```
 
-Скрипт автоматически определяет ОС и архитектуру, скачивает последний релиз, проверяет контрольную сумму и устанавливает бинарник в `/usr/local/bin` (или `~/.local/bin`, если `/usr/local/bin` недоступен без `sudo`).
+Скрипт автоматически определяет ОС и архитектуру, скачивает последний релиз, проверяет контрольную сумму и по умолчанию устанавливает бинарник в `~/.local/bin` (без `sudo`). Переопределить путь установки можно переменной `INSTALL_DIR`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/mcp-postgres/main/install.sh \
+  | INSTALL_DIR=/usr/local/bin sh
+```
+
+Если целевой каталог требует повышенных прав, скрипт запросит `sudo`. В конце предупредит, если каталог не в `PATH`.
 
 ### Из релизов вручную
 
@@ -18,11 +25,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/m
 
 ```bash
 # Linux x86_64 — пример для последнего релиза
-VERSION=v0.1.0
+VERSION=v0.1.3
 TARGET=x86_64-unknown-linux-gnu
 curl -sSL "https://github.com/zeslava/mcp-postgres/releases/download/${VERSION}/mcp-postgres-${VERSION}-${TARGET}.tar.gz" \
   | tar -xz
-sudo mv "mcp-postgres-${VERSION}-${TARGET}/mcp-postgres" /usr/local/bin/
+install -m 755 "mcp-postgres-${VERSION}-${TARGET}/mcp-postgres" "$HOME/.local/bin/mcp-postgres"
 ```
 
 Проверка контрольной суммы:
@@ -138,6 +145,17 @@ claude mcp add postgres \
 | `query` | `sql: string` | Выполняет SELECT, возвращает JSON-массив строк. Не-SELECT запросы отклоняются. |
 | `list_tables` | — | Список пользовательских таблиц (исключая `pg_catalog`, `information_schema`). |
 | `describe_table` | `table: string`, `schema?: string` (default `public`) | Колонки, типы, nullability. |
+
+### Преобразование типов
+
+`query` использует текстовый протокол PostgreSQL (`simple_query`), поэтому поддерживается любой тип данных. Для удобства клиента применяется пост-обработка:
+
+- `bool` → JSON `true` / `false`
+- `int2` / `int4` / `int8` / `oid` → JSON number
+- `float4` / `float8` → JSON number
+- `json` / `jsonb` → распарсенный JSON
+- всё остальное (`uuid`, `numeric`, `date`, `time`, `timestamp`, `timestamptz`, `interval`, `inet`, `cidr`, `macaddr`, `bytea`, массивы, `range`, композитные типы, `enum`, геометрические, `tsvector`, `hstore`, …) — строка в каноническом представлении PostgreSQL.
+- `NULL` → JSON `null`.
 
 ### Примеры вызовов
 
