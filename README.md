@@ -1,4 +1,4 @@
-# mcp-postgres
+# db-mcp
 
 MCP server для PostgreSQL. Предоставляет read-only доступ к БД через stdio-транспорт.
 
@@ -7,13 +7,13 @@ MCP server для PostgreSQL. Предоставляет read-only доступ 
 ### Быстрая установка (Linux и macOS Apple Silicon)
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/mcp-postgres/main/install.sh | sh
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/db-mcp/main/install.sh | sh
 ```
 
 Скрипт автоматически определяет ОС и архитектуру, скачивает последний релиз, проверяет контрольную сумму и по умолчанию устанавливает бинарник в `~/.local/bin` (без `sudo`). Переопределить путь установки можно переменной `INSTALL_DIR`:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/mcp-postgres/main/install.sh \
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/db-mcp/main/install.sh \
   | INSTALL_DIR=/usr/local/bin sh
 ```
 
@@ -21,29 +21,29 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/m
 
 ### Из релизов вручную
 
-Готовые бинарники для Linux (x86_64, aarch64), macOS (arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/mcp-postgres/releases).
+Готовые бинарники для Linux (x86_64, aarch64), macOS (arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/db-mcp/releases).
 
 ```bash
 # Linux x86_64 — пример для последнего релиза
 VERSION=v0.1.3
 TARGET=x86_64-unknown-linux-gnu
-curl -sSL "https://github.com/zeslava/mcp-postgres/releases/download/${VERSION}/mcp-postgres-${VERSION}-${TARGET}.tar.gz" \
+curl -sSL "https://github.com/zeslava/db-mcp/releases/download/${VERSION}/db-mcp-${VERSION}-${TARGET}.tar.gz" \
   | tar -xz
-install -m 755 "mcp-postgres-${VERSION}-${TARGET}/mcp-postgres" "$HOME/.local/bin/mcp-postgres"
+install -m 755 "db-mcp-${VERSION}-${TARGET}/db-mcp" "$HOME/.local/bin/db-mcp"
 ```
 
 Проверка контрольной суммы:
 
 ```bash
-curl -sSL -O "https://github.com/zeslava/mcp-postgres/releases/download/${VERSION}/mcp-postgres-${VERSION}-${TARGET}.tar.gz.sha256"
-shasum -a 256 -c "mcp-postgres-${VERSION}-${TARGET}.tar.gz.sha256"
+curl -sSL -O "https://github.com/zeslava/db-mcp/releases/download/${VERSION}/db-mcp-${VERSION}-${TARGET}.tar.gz.sha256"
+shasum -a 256 -c "db-mcp-${VERSION}-${TARGET}.tar.gz.sha256"
 ```
 
 ### Из исходников
 
 ```bash
 cargo build --release
-# бинарник: ./target/release/mcp-postgres
+# бинарник: ./target/release/db-mcp
 ```
 
 ## Запуск
@@ -51,9 +51,9 @@ cargo build --release
 Сервер принимает URL БД через флаг `--database-url` или переменную окружения `DATABASE_URL`.
 
 ```bash
-./target/release/mcp-postgres --database-url postgres://user:pass@localhost:5432/mydb
+./target/release/db-mcp --database-url postgres://user:pass@localhost:5432/mydb
 # или
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb ./target/release/mcp-postgres
+DATABASE_URL=postgres://user:pass@localhost:5432/mydb ./target/release/db-mcp
 ```
 
 Логи пишутся в stderr, JSON-RPC — в stdout. Уровень логов — через `RUST_LOG` (например, `RUST_LOG=debug`).
@@ -65,7 +65,7 @@ DATABASE_URL=postgres://user:pass@localhost:5432/mydb ./target/release/mcp-postg
 ```bash
 claude mcp add postgres \
   --env DATABASE_URL=postgres://user:pass@localhost:5432/mydb \
-  -- /absolute/path/to/target/release/mcp-postgres
+  -- /absolute/path/to/target/release/db-mcp
 ```
 
 Или вручную в `~/.claude.json` (секция `mcpServers`):
@@ -74,7 +74,7 @@ claude mcp add postgres \
 {
   "mcpServers": {
     "postgres": {
-      "command": "/absolute/path/to/target/release/mcp-postgres",
+      "command": "/absolute/path/to/target/release/db-mcp",
       "args": [],
       "env": {
         "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb"
@@ -95,7 +95,7 @@ claude mcp add postgres \
 {
   "mcpServers": {
     "postgres": {
-      "command": "/absolute/path/to/target/release/mcp-postgres",
+      "command": "/absolute/path/to/target/release/db-mcp",
       "env": {
         "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb"
       }
@@ -112,8 +112,8 @@ claude mcp add postgres \
 
 ```json
 {
-  "mcp-postgres": {
-    "command": "/absolute/path/to/target/release/mcp-postgres",
+  "db-mcp": {
+    "command": "/absolute/path/to/target/release/db-mcp",
     "env": { "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb" }
   }
 }
@@ -127,11 +127,11 @@ claude mcp add postgres \
 {
   "mcpServers": {
     "pg-prod": {
-      "command": "/path/to/mcp-postgres",
+      "command": "/path/to/db-mcp",
       "env": { "DATABASE_URL": "postgres://ro:***@prod-host/app" }
     },
     "pg-staging": {
-      "command": "/path/to/mcp-postgres",
+      "command": "/path/to/db-mcp",
       "env": { "DATABASE_URL": "postgres://ro:***@staging-host/app" }
     }
   }
@@ -184,7 +184,7 @@ claude mcp add postgres \
 
 ```bash
 # проверить, что сервер стартует и отвечает на initialize
-RUST_LOG=debug DATABASE_URL=postgres://... ./target/release/mcp-postgres
+RUST_LOG=debug DATABASE_URL=postgres://... ./target/release/db-mcp
 ```
 
 Из клиента смотреть логи (Claude Desktop: `~/Library/Logs/Claude/mcp*.log`).

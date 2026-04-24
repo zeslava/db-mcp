@@ -1,10 +1,10 @@
 #!/bin/sh
-# install.sh — установщик mcp-postgres
-# Использование: curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/mcp-postgres/main/install.sh | sh
+# install.sh — установщик db-mcp
+# Использование: curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/db-mcp/main/install.sh | sh
 set -e
 
-REPO="zeslava/mcp-postgres"
-BIN="mcp-postgres"
+REPO="zeslava/db-mcp"
+BIN="db-mcp"
 
 # ---------- определение платформы ----------
 OS=$(uname -s)

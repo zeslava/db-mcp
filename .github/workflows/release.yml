@@ -10,7 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BIN_NAME: mcp-postgres
+  BIN_NAME: db-mcp
 
 jobs:
   build:
