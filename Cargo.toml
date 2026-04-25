@@ -1,6 +1,6 @@
 [package]
 name = "db-mcp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
@@ -9,6 +9,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 mysql_async = { version = "0.34", default-features = false, features = ["default-rustls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset"] }
+url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1.0"

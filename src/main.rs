@@ -8,6 +8,7 @@ use clap::Parser;
 use rmcp::{ServiceExt, transport::stdio};
 
 use crate::db::Database;
+use crate::db::clickhouse::ClickhouseBackend;
 use crate::db::mysql::MysqlBackend;
 use crate::db::postgres::PgBackend;
 use crate::db::sqlite::SqliteBackend;
@@ -43,6 +44,9 @@ async fn main() -> Result<()> {
     let backend: Arc<dyn Database> = match scheme {
         "postgres" | "postgresql" => Arc::new(PgBackend::connect(&args.database_url).await?),
         "mysql" => Arc::new(MysqlBackend::connect(&args.database_url).await?),
+        "clickhouse" | "clickhouse+http" | "clickhouse+https" | "ch" | "chs" => {
+            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
+        }
         "sqlite" => Arc::new(SqliteBackend::open(&args.database_url).await?),
         other => bail!("unsupported database url scheme: {other:?}"),
     };

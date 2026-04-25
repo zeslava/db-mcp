@@ -9,7 +9,7 @@ Single-binary stdio MCP server exposing read-only SQL tools across multiple data
 - Entry point: `src/main.rs` — CLI parsing, URL-scheme dispatch to a backend, server bootstrap.
 - Server layer: `src/server.rs` — `DbServer` holding `Arc<dyn Database>` and a `ToolRouter<DbServer>`. Tools are engine-agnostic.
 - Backends: `src/db/<engine>.rs` — each implements the `Database` trait from `src/db/mod.rs`. All engines are compiled into the single binary; no Cargo features.
-- Stack: `rmcp` 1.5 (MCP SDK), `clap` for CLI/env config, `async-trait` for the dyn-compatible backend port. Drivers: `tokio-postgres`, `mysql_async`, `rusqlite`.
+- Stack: `rmcp` 1.5 (MCP SDK), `clap` for CLI/env config, `async-trait` for the dyn-compatible backend port. Drivers: `tokio-postgres`, `mysql_async`, `rusqlite`, `reqwest` (ClickHouse HTTP).
 - Transport: stdio. Tracing writes to stderr — never log to stdout, it corrupts the JSON-RPC stream.
 
 ## Commands
@@ -19,6 +19,7 @@ cargo build
 cargo run -- --database-url postgres://user:pass@host/db
 cargo run -- --database-url mysql://user:pass@host/db
 cargo run -- --database-url sqlite:///absolute/path/to.db
+cargo run -- --database-url clickhouse://default:pass@host:8123/db
 DATABASE_URL=postgres://user:pass@host/db cargo run
 cargo fmt --all                # run before every commit
 cargo fmt --all -- --check     # CI gate
@@ -51,6 +52,7 @@ pub trait Database: Send + Sync {
 - `src/db/postgres.rs` — `tokio-postgres`, text protocol via `simple_query`, post-processing in `text_to_json`.
 - `src/db/mysql.rs` — `mysql_async` pool, binary protocol via `Row`/`Value`, JSON columns parsed when `ColumnType::MYSQL_TYPE_JSON`.
 - `src/db/sqlite.rs` — `rusqlite` driven via `spawn_blocking`.
+- `src/db/clickhouse.rs` — HTTP interface via `reqwest`, `JSONEachRow` format with `output_format_json_quote_64bit_integers=0`, parameterized via `param_*` URL params. Schemes: `clickhouse://` (HTTP, port 8123) / `clickhouse+https://` (HTTPS, port 8443).
 
 Adding a new engine:
 1. Add the driver dep to `Cargo.toml`.

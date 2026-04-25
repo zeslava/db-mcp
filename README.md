@@ -9,6 +9,7 @@ MCP-сервер для SQL-баз с read-only доступом через stdi
 | `postgres://` / `postgresql://` | PostgreSQL | `tokio-postgres` |
 | `mysql://` | MySQL / MariaDB | `mysql_async` |
 | `sqlite://` / `sqlite:` | SQLite | `rusqlite` (bundled) |
+| `clickhouse://` / `clickhouse+https://` | ClickHouse | HTTP (`reqwest`) |
 
 ## Установка
 
@@ -60,6 +61,8 @@ URL передаётся флагом `--database-url` или переменно
 ./target/release/db-mcp --database-url postgres://user:pass@localhost:5432/mydb
 ./target/release/db-mcp --database-url mysql://user:pass@localhost:3306/mydb
 ./target/release/db-mcp --database-url sqlite:///absolute/path/to/data.db
+./target/release/db-mcp --database-url clickhouse://default:pass@localhost:8123/default
+./target/release/db-mcp --database-url clickhouse+https://user:pass@host.cloud:8443/default
 DATABASE_URL=sqlite::memory: ./target/release/db-mcp
 ```
 
@@ -184,6 +187,20 @@ claude mcp add db \
 - `NULL` → JSON `null`.
 
 `describe_table` для SQLite использует `PRAGMA table_info`; параметр `schema` игнорируется (SQLite оперирует базами через `ATTACH`, а не схемами).
+
+#### ClickHouse
+
+Используется HTTP-интерфейс, формат `JSONEachRow` с `output_format_json_quote_64bit_integers=0`. Дефолтный порт `8123` (HTTP) и `8443` (HTTPS, схема `clickhouse+https://`). Тип-маппинг — родной для ClickHouse:
+
+- `Int*` / `UInt*` (включая 64-битные) → JSON number
+- `Float32` / `Float64` → JSON number (NaN/Inf → строка)
+- `Decimal*` → JSON number
+- `String` / `FixedString` / `UUID` / `Enum*` → строка
+- `Date` / `DateTime[64]` → строка в каноническом формате CH
+- `Array(T)` → JSON array, `Map(K,V)` / `Tuple(...)` / `JSON` → JSON object/array
+- `Nullable(T)` → значение либо `null`; в `describe_table` колонка помечается `nullable=true`, тип отдаётся как `Nullable(T)`.
+
+`describe_table` читает `system.columns`; `schema` опционален — без него используется текущая БД из `currentDatabase()`. `list_tables` исключает `system`, `information_schema`, `INFORMATION_SCHEMA`.
 
 ### Примеры
 

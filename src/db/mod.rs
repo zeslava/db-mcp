@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value};
 
+pub mod clickhouse;
 pub mod mysql;
 pub mod postgres;
 pub mod sqlite;
