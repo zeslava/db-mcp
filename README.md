@@ -1,6 +1,15 @@
 # db-mcp
 
-MCP server для PostgreSQL. Предоставляет read-only доступ к БД через stdio-транспорт.
+MCP-сервер для SQL-баз с read-only доступом через stdio. Один бинарник, движок выбирается по схеме URL.
+
+Поддерживаемые движки:
+
+| Схема URL | Движок | Cargo feature |
+|-----------|--------|---------------|
+| `postgres://` / `postgresql://` | PostgreSQL (через `tokio-postgres`) | `postgres` |
+| `sqlite://` / `sqlite:` | SQLite (через `rusqlite`) | `sqlite` |
+
+По умолчанию собираются обе фичи. Чтобы получить минимальный бинарник под одну БД — `--no-default-features --features <engine>`.
 
 ## Установка
 
@@ -17,14 +26,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/d
   | INSTALL_DIR=/usr/local/bin sh
 ```
 
-Если целевой каталог требует повышенных прав, скрипт запросит `sudo`. В конце предупредит, если каталог не в `PATH`.
-
 ### Из релизов вручную
 
 Готовые бинарники для Linux (x86_64, aarch64), macOS (arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/db-mcp/releases).
 
 ```bash
-# Linux x86_64 — пример для последнего релиза
 VERSION=v0.1.3
 TARGET=x86_64-unknown-linux-gnu
 curl -sSL "https://github.com/zeslava/db-mcp/releases/download/${VERSION}/db-mcp-${VERSION}-${TARGET}.tar.gz" \
@@ -42,28 +48,30 @@ shasum -a 256 -c "db-mcp-${VERSION}-${TARGET}.tar.gz.sha256"
 ### Из исходников
 
 ```bash
-cargo build --release
+cargo build --release                                       # все движки (default)
+cargo build --release --no-default-features --features postgres
+cargo build --release --no-default-features --features sqlite
 # бинарник: ./target/release/db-mcp
 ```
 
 ## Запуск
 
-Сервер принимает URL БД через флаг `--database-url` или переменную окружения `DATABASE_URL`.
+URL передаётся флагом `--database-url` или переменной `DATABASE_URL`. Схема URL определяет, какой адаптер инициализируется.
 
 ```bash
 ./target/release/db-mcp --database-url postgres://user:pass@localhost:5432/mydb
-# или
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb ./target/release/db-mcp
+./target/release/db-mcp --database-url sqlite:///absolute/path/to/data.db
+DATABASE_URL=sqlite::memory: ./target/release/db-mcp
 ```
 
-Логи пишутся в stderr, JSON-RPC — в stdout. Уровень логов — через `RUST_LOG` (например, `RUST_LOG=debug`).
+Логи — в stderr, JSON-RPC — в stdout. Уровень логов через `RUST_LOG` (например, `RUST_LOG=debug`).
 
 ## Подключение к клиентам
 
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add postgres \
+claude mcp add db \
   --env DATABASE_URL=postgres://user:pass@localhost:5432/mydb \
   -- /absolute/path/to/target/release/db-mcp
 ```
@@ -73,7 +81,7 @@ claude mcp add postgres \
 ```json
 {
   "mcpServers": {
-    "postgres": {
+    "db": {
       "command": "/absolute/path/to/target/release/db-mcp",
       "args": [],
       "env": {
@@ -84,8 +92,6 @@ claude mcp add postgres \
 }
 ```
 
-Проверка: `claude mcp list`.
-
 ### Claude Desktop
 
 `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) или
@@ -94,7 +100,7 @@ claude mcp add postgres \
 ```json
 {
   "mcpServers": {
-    "postgres": {
+    "db": {
       "command": "/absolute/path/to/target/release/db-mcp",
       "env": {
         "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb"
@@ -104,17 +110,13 @@ claude mcp add postgres \
 }
 ```
 
-Перезапустить Claude Desktop.
-
 ### Cursor / Windsurf / Zed
-
-Формат аналогичный — `command` + `env`. В настройках MCP соответствующего редактора добавить:
 
 ```json
 {
   "db-mcp": {
     "command": "/absolute/path/to/target/release/db-mcp",
-    "env": { "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb" }
+    "env": { "DATABASE_URL": "sqlite:///absolute/path/to/data.db" }
   }
 }
 ```
@@ -130,9 +132,9 @@ claude mcp add postgres \
       "command": "/path/to/db-mcp",
       "env": { "DATABASE_URL": "postgres://ro:***@prod-host/app" }
     },
-    "pg-staging": {
+    "sqlite-local": {
       "command": "/path/to/db-mcp",
-      "env": { "DATABASE_URL": "postgres://ro:***@staging-host/app" }
+      "env": { "DATABASE_URL": "sqlite:///home/me/notes.db" }
     }
   }
 }
@@ -140,36 +142,53 @@ claude mcp add postgres \
 
 ## Tools
 
+Тулзы общие для всех движков:
+
 | Tool | Параметры | Описание |
 |------|-----------|----------|
 | `query` | `sql: string` | Выполняет SELECT, возвращает JSON-массив строк. Не-SELECT запросы отклоняются. |
-| `list_tables` | — | Список пользовательских таблиц (исключая `pg_catalog`, `information_schema`). |
+| `list_tables` | — | Список пользовательских таблиц. |
 | `describe_table` | `table: string`, `schema?: string` (default `public`) | Колонки, типы, nullability. |
 
 ### Преобразование типов
 
-`query` использует текстовый протокол PostgreSQL (`simple_query`), поэтому поддерживается любой тип данных. Для удобства клиента применяется пост-обработка:
+#### PostgreSQL
+
+`query` использует текстовый протокол PostgreSQL (`simple_query`), поэтому поддерживается любой тип. Пост-обработка:
 
 - `bool` → JSON `true` / `false`
 - `int2` / `int4` / `int8` / `oid` → JSON number
 - `float4` / `float8` → JSON number
 - `json` / `jsonb` → распарсенный JSON
-- всё остальное (`uuid`, `numeric`, `date`, `time`, `timestamp`, `timestamptz`, `interval`, `inet`, `cidr`, `macaddr`, `bytea`, массивы, `range`, композитные типы, `enum`, геометрические, `tsvector`, `hstore`, …) — строка в каноническом представлении PostgreSQL.
+- остальное (`uuid`, `numeric`, `date`, `time`, `timestamp[tz]`, `interval`, `inet`, `cidr`, `macaddr`, `bytea`, массивы, `range`, композитные типы, `enum`, геометрические, `tsvector`, `hstore`, …) — строка в каноническом представлении PostgreSQL.
 - `NULL` → JSON `null`.
 
-### Примеры вызовов
+#### SQLite
+
+- `INTEGER` → JSON number
+- `REAL` → JSON number (NaN/Inf → `null`)
+- `TEXT` → JSON string
+- `BLOB` → строка `\x<hex>`
+- `NULL` → JSON `null`.
+
+`describe_table` для SQLite использует `PRAGMA table_info`; параметр `schema` игнорируется (SQLite оперирует базами через `ATTACH`, а не схемами).
+
+### Примеры
 
 ```jsonc
 // query
 { "sql": "SELECT id, email FROM users WHERE created_at > now() - interval '7 days' LIMIT 10" }
 
-// describe_table
+// describe_table (PG)
 { "table": "orders", "schema": "public" }
+
+// describe_table (SQLite)
+{ "table": "orders" }
 ```
 
 ## Рекомендации по безопасности
 
-- Используйте отдельного пользователя PostgreSQL с правами только `SELECT`:
+- Для PostgreSQL — отдельная роль с правами только `SELECT`:
   ```sql
   CREATE ROLE mcp_ro LOGIN PASSWORD '***';
   GRANT CONNECT ON DATABASE mydb TO mcp_ro;
@@ -177,14 +196,13 @@ claude mcp add postgres \
   GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_ro;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_ro;
   ```
-- Не коммитьте `DATABASE_URL` с реальными креденшелами в конфиги клиентов, которые попадают в git.
-- Фильтр `SELECT` на стороне сервера — защита от случайностей, не от намеренного обхода (например, CTE с `INSERT ... RETURNING` будет отклонён, т.к. начинается не с `SELECT`, но полагаться только на это не стоит — используйте read-only роль).
+- Для SQLite — открывайте read-only копию файла или используйте файловые права; серверная фильтрация по `SELECT` — защита от случайностей, не от обхода (CTE с `INSERT ... RETURNING` отклоняются, но полагаться только на это не стоит).
+- Не коммитьте `DATABASE_URL` с реальными креденшелами в конфиги клиентов, попадающие в git.
 
 ## Отладка
 
 ```bash
-# проверить, что сервер стартует и отвечает на initialize
 RUST_LOG=debug DATABASE_URL=postgres://... ./target/release/db-mcp
 ```
 
-Из клиента смотреть логи (Claude Desktop: `~/Library/Logs/Claude/mcp*.log`).
+Из клиента смотрите его логи (Claude Desktop: `~/Library/Logs/Claude/mcp*.log`).
