@@ -30,7 +30,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/d
 Готовые бинарники для Linux (x86_64, aarch64), macOS (arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/db-mcp/releases).
 
 ```bash
-VERSION=v0.1.3
+VERSION=v0.2.0
 TARGET=x86_64-unknown-linux-gnu
 curl -sSL "https://github.com/zeslava/db-mcp/releases/download/${VERSION}/db-mcp-${VERSION}-${TARGET}.tar.gz" \
   | tar -xz
