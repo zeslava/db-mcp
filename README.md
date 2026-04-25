@@ -231,6 +231,18 @@ claude mcp add db \
 - Для SQLite — открывайте read-only копию файла или используйте файловые права; серверная фильтрация по `SELECT` — защита от случайностей, не от обхода (CTE с `INSERT ... RETURNING` отклоняются, но полагаться только на это не стоит).
 - Не коммитьте `DATABASE_URL` с реальными креденшелами в конфиги клиентов, попадающие в git.
 
+## Интеграционные тесты
+
+E2E-тесты поднимают контейнер с БД через [`testcontainers`](https://crates.io/crates/testcontainers), накатывают миграцию, запускают `db-mcp` как stdio-сервис и дёргают tools через MCP-клиента. Требуется работающий Docker (для SQLite контейнер не нужен).
+
+```bash
+cargo test --test integration -- --ignored
+# отдельный движок:
+cargo test --test integration postgres -- --ignored
+```
+
+Тесты помечены `#[ignore]`, поэтому обычный `cargo test` их не запускает.
+
 ## Отладка
 
 ```bash

@@ -78,6 +78,17 @@ Adding a new engine:
 - No Claude co-author trailer.
 - No bullet-point bodies unless requested.
 
+## Integration tests
+
+E2E-тесты в `tests/` поднимают БД в Docker через `testcontainers` (`postgres`, `mysql`, `clickhouse`) либо во временном файле (`sqlite`), накатывают схему и сидят данные родным драйвером, запускают `db-mcp` как дочерний процесс и общаются по stdio через `rmcp`-клиента.
+
+```bash
+cargo test --test integration -- --ignored
+cargo test --test integration postgres -- --ignored
+```
+
+Все тесты `#[ignore]` — обычный `cargo test` их не трогает. Требует доступного Docker для трёх контейнерных бэкендов.
+
 ## Safety
 
 - SELECT-only enforcement in `DbServer::query` is load-bearing — do not relax it. It rejects anything not starting with `SELECT` (case-insensitive after trim), so CTEs with `INSERT ... RETURNING` are blocked.
