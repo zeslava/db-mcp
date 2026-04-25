@@ -30,19 +30,20 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zeslava/d
 Готовые бинарники для Linux (x86_64, aarch64), macOS (arm64) и Windows (x86_64) публикуются на [странице Releases](https://github.com/zeslava/db-mcp/releases).
 
 ```bash
-VERSION=v0.2.0
 TARGET=x86_64-unknown-linux-gnu
-curl -sSL "https://github.com/zeslava/db-mcp/releases/download/${VERSION}/db-mcp-${VERSION}-${TARGET}.tar.gz" \
+curl -sSL "https://github.com/zeslava/db-mcp/releases/latest/download/db-mcp-${TARGET}.tar.gz" \
   | tar -xz
-install -m 755 "db-mcp-${VERSION}-${TARGET}/db-mcp" "$HOME/.local/bin/db-mcp"
+install -m 755 "db-mcp-${TARGET}/db-mcp" "$HOME/.local/bin/db-mcp"
 ```
 
 Проверка контрольной суммы:
 
 ```bash
-curl -sSL -O "https://github.com/zeslava/db-mcp/releases/download/${VERSION}/db-mcp-${VERSION}-${TARGET}.tar.gz.sha256"
-shasum -a 256 -c "db-mcp-${VERSION}-${TARGET}.tar.gz.sha256"
+curl -sSL -O "https://github.com/zeslava/db-mcp/releases/latest/download/db-mcp-${TARGET}.tar.gz.sha256"
+shasum -a 256 -c "db-mcp-${TARGET}.tar.gz.sha256"
 ```
+
+Старые релизы остаются на странице Releases как история, но ассеты у них удаляются — используйте `latest/download/...`.
 
 ### Из исходников
 

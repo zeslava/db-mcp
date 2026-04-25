@@ -45,7 +45,7 @@ fi
 echo "Installing ${BIN} ${VERSION} (${TARGET})..."
 
 # ---------- загрузка ----------
-FILENAME="${BIN}-${VERSION}-${TARGET}.tar.gz"
+FILENAME="${BIN}-${TARGET}.tar.gz"
 BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
 TMP=$(mktemp -d)
@@ -94,7 +94,7 @@ if [ -z "$SUDO" ] && [ ! -w "$INSTALL_DIR" ]; then
   fi
 fi
 
-${SUDO:-} install -m 755 "${BIN}-${VERSION}-${TARGET}/${BIN}" "${INSTALL_DIR}/${BIN}"
+${SUDO:-} install -m 755 "${BIN}-${TARGET}/${BIN}" "${INSTALL_DIR}/${BIN}"
 
 echo ""
 echo "${BIN} ${VERSION} installed to ${INSTALL_DIR}/${BIN}"
