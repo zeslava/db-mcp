@@ -13,8 +13,8 @@ ARCH=$(uname -m)
 case "$OS" in
   Linux)
     case "$ARCH" in
-      x86_64)          TARGET="x86_64-unknown-linux-gnu" ;;
-      aarch64|arm64)   TARGET="aarch64-unknown-linux-gnu" ;;
+      x86_64)          TARGET="x86_64-unknown-linux-musl" ;;
+      aarch64|arm64)   TARGET="aarch64-unknown-linux-musl" ;;
       *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
     esac
     ;;
