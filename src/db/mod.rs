@@ -4,6 +4,7 @@ use serde_json::{Map, Value};
 pub mod clickhouse;
 pub mod mysql;
 pub mod postgres;
+#[cfg(feature = "sqlite")]
 pub mod sqlite;
 
 pub type Row = Map<String, Value>;

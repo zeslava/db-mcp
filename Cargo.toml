@@ -1,13 +1,17 @@
 [package]
 name = "db-mcp"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
+
+[features]
+default = ["sqlite"]
+sqlite = ["dep:rusqlite"]
 
 [dependencies]
 rmcp = { version = "1.5", features = ["server", "macros", "transport-io", "schemars"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 mysql_async = { version = "0.34", default-features = false, features = ["default-rustls"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset"] }
 url = "2"

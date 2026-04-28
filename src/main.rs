@@ -11,6 +11,7 @@ use crate::db::Database;
 use crate::db::clickhouse::ClickhouseBackend;
 use crate::db::mysql::MysqlBackend;
 use crate::db::postgres::PgBackend;
+#[cfg(feature = "sqlite")]
 use crate::db::sqlite::SqliteBackend;
 use crate::server::DbServer;
 
@@ -54,6 +55,7 @@ async fn main() -> Result<()> {
         "clickhouse" | "clickhouse+http" | "clickhouse+https" | "ch" | "chs" => {
             Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
         }
+        #[cfg(feature = "sqlite")]
         "sqlite" => Arc::new(SqliteBackend::open(&args.database_url).await?),
         other => bail!("unsupported database url scheme: {other:?}"),
     };

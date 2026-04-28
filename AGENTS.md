@@ -8,8 +8,9 @@ Single-binary stdio MCP server exposing read-only SQL tools across multiple data
 
 - Entry point: `src/main.rs` — CLI parsing, URL-scheme dispatch to a backend, server bootstrap.
 - Server layer: `src/server.rs` — `DbServer` holding `Arc<dyn Database>` and a `ToolRouter<DbServer>`. Tools are engine-agnostic.
-- Backends: `src/db/<engine>.rs` — each implements the `Database` trait from `src/db/mod.rs`. All engines are compiled into the single binary; no Cargo features.
-- Stack: `rmcp` 1.5 (MCP SDK), `clap` for CLI/env config, `async-trait` for the dyn-compatible backend port. Drivers: `tokio-postgres`, `mysql_async`, `rusqlite`, `reqwest` (ClickHouse HTTP).
+- Backends: `src/db/<engine>.rs` — each implements the `Database` trait from `src/db/mod.rs`. Most engines are always compiled in; SQLite is behind the `sqlite` Cargo feature (enabled by default).
+- Stack: `rmcp` 1.5 (MCP SDK), `clap` for CLI/env config, `async-trait` for the dyn-compatible backend port. Drivers: `tokio-postgres`, `mysql_async`, `rusqlite` (optional, feature `sqlite`), `reqwest` (ClickHouse HTTP).
+- Release Linux targets use `*-unknown-linux-musl` for fully static binaries (no glibc at runtime). Cross-compilation via `taiki-e/setup-cross-toolchain-action`.
 - Transport: stdio. Tracing writes to stderr — never log to stdout, it corrupts the JSON-RPC stream.
 
 ## Commands
