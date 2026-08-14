@@ -3,7 +3,7 @@ use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio_postgres::NoTls;
 
-use crate::common::McpClient;
+use crate::common::{McpClient, flatten_values};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
@@ -56,9 +56,41 @@ async fn postgres_e2e() {
     assert_eq!(rows[0]["name"], "alice");
     assert_eq!(rows[0]["payload"]["role"], "admin");
 
+    let plan = client
+        .call_json(
+            "explain",
+            json!({"sql": "SELECT id, name FROM users ORDER BY id"}),
+        )
+        .await
+        .expect("explain");
+    assert!(!plan.as_array().unwrap().is_empty(), "empty plan");
+    let plan_text = flatten_values(&plan);
+    assert!(plan_text.contains("users"), "unexpected plan: {plan_text}");
+
+    let analyzed = client
+        .call_json(
+            "explain",
+            json!({"sql": "SELECT id, name FROM users ORDER BY id", "analyze": true}),
+        )
+        .await
+        .expect("explain analyze");
+    let analyzed_text = flatten_values(&analyzed);
+    assert!(
+        analyzed_text.contains("actual time"),
+        "expected ANALYZE timings, got: {analyzed_text}"
+    );
+
     let bad = client
         .call(
             "query",
+            json!({"sql": "INSERT INTO users (id, name) VALUES (3, 'eve')"}),
+        )
+        .await;
+    assert!(bad.is_err(), "expected SELECT-only rejection, got {bad:?}");
+
+    let bad = client
+        .call(
+            "explain",
             json!({"sql": "INSERT INTO users (id, name) VALUES (3, 'eve')"}),
         )
         .await;

@@ -3,7 +3,7 @@ use serde_json::json;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
-use crate::common::McpClient;
+use crate::common::{McpClient, flatten_values};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
@@ -58,6 +58,26 @@ async fn mysql_e2e() {
     );
     assert_eq!(rows[0]["name"], "alice");
     assert_eq!(rows[0]["payload"]["role"], "admin");
+
+    let plan = client
+        .call_json("explain", json!({"sql": "SELECT id, name FROM users"}))
+        .await
+        .expect("explain");
+    assert!(!plan.as_array().unwrap().is_empty(), "empty plan");
+    let plan_text = flatten_values(&plan);
+    assert!(plan_text.contains("users"), "unexpected plan: {plan_text}");
+
+    let analyzed = client
+        .call_json(
+            "explain",
+            json!({"sql": "SELECT id, name FROM users", "analyze": true}),
+        )
+        .await
+        .expect("explain analyze");
+    assert!(
+        !analyzed.as_array().unwrap().is_empty(),
+        "empty EXPLAIN ANALYZE output"
+    );
 
     let bad = client
         .call(

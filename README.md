@@ -149,6 +149,7 @@ claude mcp add db \
 | Tool | Параметры | Описание |
 |------|-----------|----------|
 | `query` | `sql: string` | Выполняет SELECT, возвращает JSON-массив строк. Не-SELECT запросы отклоняются. |
+| `explain` | `sql: string`, `analyze?: bool` | План выполнения SELECT. `analyze=true` → `EXPLAIN ANALYZE` (реально выполняет запрос): PG и MySQL 8.0.18+; ClickHouse отдаёт ошибку, SQLite игнорирует (всегда `EXPLAIN QUERY PLAN`). |
 | `list_tables` | — | Список пользовательских таблиц. |
 | `describe_table` | `table: string`, `schema?: string` | Колонки, типы, nullability. Дефолт `schema`: PG → `public`, MySQL → текущая БД, SQLite → не используется. |
 

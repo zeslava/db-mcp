@@ -106,6 +106,13 @@ impl Database for ClickhouseBackend {
         self.query_rows(sql, &[]).await
     }
 
+    async fn explain(&self, sql: &str, analyze: bool) -> Result<Vec<JsonRow>> {
+        if analyze {
+            bail!("ClickHouse does not support EXPLAIN ANALYZE");
+        }
+        self.query_rows(&format!("EXPLAIN {sql}"), &[]).await
+    }
+
     async fn list_tables(&self) -> Result<Vec<TableRef>> {
         let rows = self
             .query_rows(

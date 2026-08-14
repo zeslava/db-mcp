@@ -1,7 +1,7 @@
 use serde_json::json;
 use tempfile::NamedTempFile;
 
-use crate::common::McpClient;
+use crate::common::{McpClient, flatten_values};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
@@ -61,6 +61,27 @@ async fn sqlite_e2e() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["id"], 1);
     assert_eq!(rows[0]["name"], "alice");
+
+    let plan = client
+        .call_json("explain", json!({"sql": "SELECT id, name FROM users"}))
+        .await
+        .expect("explain");
+    let plan_rows = plan.as_array().unwrap();
+    assert!(!plan_rows.is_empty(), "empty plan");
+    assert!(
+        plan_rows.iter().all(|r| r.get("detail").is_some()),
+        "expected EXPLAIN QUERY PLAN shape, got {plan_rows:?}"
+    );
+    assert!(flatten_values(&plan).contains("users"));
+
+    let analyzed = client
+        .call_json(
+            "explain",
+            json!({"sql": "SELECT id, name FROM users", "analyze": true}),
+        )
+        .await
+        .expect("explain analyze");
+    assert_eq!(analyzed, plan, "analyze flag must be a no-op on SQLite");
 
     let bad = client
         .call(

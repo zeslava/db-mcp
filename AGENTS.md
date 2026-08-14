@@ -38,6 +38,8 @@ CI runs `cargo fmt --all -- --check` — formatting failures break the build.
 pub trait Database: Send + Sync {
     fn name(&self) -> &'static str;
     async fn query(&self, sql: &str) -> anyhow::Result<Vec<Row>>;
+    // default impl: prefixes EXPLAIN / EXPLAIN ANALYZE and delegates to query
+    async fn explain(&self, sql: &str, analyze: bool) -> anyhow::Result<Vec<Row>>;
     async fn list_tables(&self) -> anyhow::Result<Vec<TableRef>>;
     async fn describe_table(&self, schema: Option<&str>, table: &str)
         -> anyhow::Result<Vec<Column>>;
@@ -63,7 +65,7 @@ Adding a new engine:
 
 ### Server
 
-`src/server.rs::DbServer` declares the tools (`query`, `list_tables`, `describe_table`) once with `#[tool_router]` / `#[tool_handler]`. The SELECT-only enforcement lives here, not in adapters.
+`src/server.rs::DbServer` declares the tools (`query`, `explain`, `list_tables`, `describe_table`) once with `#[tool_router]` / `#[tool_handler]`. The SELECT-only enforcement lives here, not in adapters.
 
 ## Conventions
 

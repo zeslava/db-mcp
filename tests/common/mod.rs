@@ -62,6 +62,24 @@ impl McpClient {
     }
 }
 
+/// Склеивает все значения всех строк в одну строку — форма вывода EXPLAIN различается
+/// между движками, поэтому в тестах проверяем только наличие подстрок.
+pub fn flatten_values(rows: &Value) -> String {
+    rows.as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|r| r.as_object())
+                .flat_map(|o| o.values())
+                .map(|v| match v {
+                    Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
+}
+
 pub fn json_obj(pairs: &[(&str, Value)]) -> Value {
     let mut m = Map::new();
     for (k, v) in pairs {

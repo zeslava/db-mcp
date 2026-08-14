@@ -54,6 +54,23 @@ async fn clickhouse_e2e() {
     assert_eq!(rows[0]["id"], 1);
     assert_eq!(rows[0]["name"], "alice");
 
+    let plan = client
+        .call_json("explain", json!({"sql": "SELECT id, name FROM users"}))
+        .await
+        .expect("explain");
+    assert!(!plan.as_array().unwrap().is_empty(), "empty plan");
+
+    let unsupported = client
+        .call(
+            "explain",
+            json!({"sql": "SELECT id, name FROM users", "analyze": true}),
+        )
+        .await;
+    assert!(
+        unsupported.is_err(),
+        "expected EXPLAIN ANALYZE rejection, got {unsupported:?}"
+    );
+
     let bad = client
         .call(
             "query",

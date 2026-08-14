@@ -24,6 +24,14 @@ pub struct Column {
 pub trait Database: Send + Sync {
     fn name(&self) -> &'static str;
     async fn query(&self, sql: &str) -> anyhow::Result<Vec<Row>>;
+    async fn explain(&self, sql: &str, analyze: bool) -> anyhow::Result<Vec<Row>> {
+        let prefix = if analyze {
+            "EXPLAIN ANALYZE "
+        } else {
+            "EXPLAIN "
+        };
+        self.query(&format!("{prefix}{sql}")).await
+    }
     async fn list_tables(&self) -> anyhow::Result<Vec<TableRef>>;
     async fn describe_table(
         &self,

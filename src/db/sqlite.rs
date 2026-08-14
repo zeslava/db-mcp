@@ -76,6 +76,12 @@ impl Database for SqliteBackend {
         .context("sqlite query task panicked")?
     }
 
+    /// SQLite has no EXPLAIN ANALYZE; the bytecode dump of plain EXPLAIN is useless here,
+    /// so both modes map to EXPLAIN QUERY PLAN.
+    async fn explain(&self, sql: &str, _analyze: bool) -> Result<Vec<Row>> {
+        self.query(&format!("EXPLAIN QUERY PLAN {sql}")).await
+    }
+
     async fn list_tables(&self) -> Result<Vec<TableRef>> {
         let conn = self.conn.clone();
         task::spawn_blocking(move || -> Result<Vec<TableRef>> {
