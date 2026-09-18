@@ -6,19 +6,57 @@ use crate::common::McpClient;
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
-async fn clickhouse_e2e() {
+async fn clickhouse_http_e2e() {
     let container = ClickHouse::default()
         .start()
         .await
         .expect("start clickhouse container");
     let host = container.get_host().await.unwrap();
     let http_port = container.get_host_port_ipv4(8123).await.unwrap();
-    let db_url = format!("clickhouse://default@{host}:{http_port}/default");
-    let http_url = format!("http://{host}:{http_port}/");
+    seed(&format!("http://{host}:{http_port}/")).await;
 
-    seed(&http_url).await;
+    run_suite(&format!(
+        "clickhouse+http://default@{host}:{http_port}/default"
+    ))
+    .await;
+}
 
+#[cfg(feature = "clickhouse-native")]
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn clickhouse_native_e2e() {
+    let container = ClickHouse::default()
+        .start()
+        .await
+        .expect("start clickhouse container");
+    let host = container.get_host().await.unwrap();
+    let http_port = container.get_host_port_ipv4(8123).await.unwrap();
+    let native_port = container.get_host_port_ipv4(9000).await.unwrap();
+    seed(&format!("http://{host}:{http_port}/")).await;
+
+    let db_url = format!("clickhouse://default@{host}:{native_port}/default");
+    run_suite(&db_url).await;
+
+    // native protocol decodes typed columns itself, unlike the JSON-over-HTTP path
     let client = McpClient::spawn(&db_url).await.expect("spawn mcp");
+    let rows = client
+        .call_json(
+            "query",
+            json!({"sql": "SELECT price, kind, tags, meta, day FROM typed ORDER BY price"}),
+        )
+        .await
+        .unwrap();
+    let rows = rows.as_array().unwrap();
+    assert_eq!(rows[0]["price"], "123.45");
+    assert_eq!(rows[0]["kind"], "b");
+    assert_eq!(rows[0]["tags"], json!(["x", "y"]));
+    assert_eq!(rows[0]["meta"], json!({"k": 7}));
+    assert_eq!(rows[0]["day"], "2024-05-01");
+    client.shutdown().await;
+}
+
+async fn run_suite(db_url: &str) {
+    let client = McpClient::spawn(db_url).await.expect("spawn mcp");
 
     let tables = client.call_json("list_tables", json!({})).await.unwrap();
     assert!(
@@ -112,4 +150,15 @@ async fn seed(http_url: &str) {
          (2, 'bob',   now(), '{\"role\":\"user\"}')",
     )
     .await;
+    exec(
+        "CREATE TABLE typed (
+            price Decimal(10, 2),
+            kind Enum8('a' = 1, 'b' = 2),
+            tags Array(String),
+            meta Map(String, UInt32),
+            day Date
+         ) ENGINE = MergeTree ORDER BY price",
+    )
+    .await;
+    exec("INSERT INTO typed VALUES (123.45, 'b', ['x', 'y'], {'k': 7}, '2024-05-01')").await;
 }

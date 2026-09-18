@@ -20,7 +20,7 @@ cargo build
 cargo run -- --database-url postgres://user:pass@host/db
 cargo run -- --database-url mysql://user:pass@host/db
 cargo run -- --database-url sqlite:///absolute/path/to.db
-cargo run -- --database-url clickhouse://default:pass@host:8123/db
+cargo run -- --database-url clickhouse://default:pass@host:9000/db
 DATABASE_URL=postgres://user:pass@host/db cargo run
 cargo fmt --all                # run before every commit
 cargo fmt --all -- --check     # CI gate
@@ -55,7 +55,8 @@ pub trait Database: Send + Sync {
 - `src/db/postgres.rs` — `tokio-postgres`, text protocol via `simple_query`, post-processing in `text_to_json`.
 - `src/db/mysql.rs` — `mysql_async` pool, binary protocol via `Row`/`Value`, JSON columns parsed when `ColumnType::MYSQL_TYPE_JSON`.
 - `src/db/sqlite.rs` — `rusqlite` driven via `spawn_blocking`.
-- `src/db/clickhouse.rs` — HTTP interface via `reqwest`, `JSONEachRow` format with `output_format_json_quote_64bit_integers=0`, parameterized via `param_*` URL params. Schemes: `clickhouse://` (HTTP, port 8123) / `clickhouse+https://` (HTTPS, port 8443).
+- `src/db/clickhouse.rs` — HTTP interface via `reqwest`, `JSONEachRow` format with `output_format_json_quote_64bit_integers=0`, parameterized via `param_*` URL params. Schemes: `clickhouse+http://` (port 8123) / `clickhouse+https://` (port 8443).
+- `src/db/clickhouse_native.rs` — native protocol via `klickhouse` (feature `clickhouse-native`, on by default), `$1` placeholders for parameters, `Value`→`serde_json` conversion per column `Type`. Schemes: `clickhouse://` / `clickhouse+native://` / `ch://` (port 9000), `clickhouses://` / `clickhouse+natives://` / `chs://` (TLS, port 9440).
 
 Adding a new engine:
 1. Add the driver dep to `Cargo.toml`.

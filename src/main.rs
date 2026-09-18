@@ -9,6 +9,8 @@ use rmcp::{ServiceExt, transport::stdio};
 
 use crate::db::Database;
 use crate::db::clickhouse::ClickhouseBackend;
+#[cfg(feature = "clickhouse-native")]
+use crate::db::clickhouse_native::ClickhouseNativeBackend;
 use crate::db::mysql::MysqlBackend;
 use crate::db::postgres::PgBackend;
 #[cfg(feature = "sqlite")]
@@ -52,7 +54,14 @@ async fn main() -> Result<()> {
     let backend: Arc<dyn Database> = match scheme {
         "postgres" | "postgresql" => Arc::new(PgBackend::connect(&args.database_url).await?),
         "mysql" => Arc::new(MysqlBackend::connect(&args.database_url).await?),
-        "clickhouse" | "clickhouse+http" | "clickhouse+https" | "ch" | "chs" => {
+        "clickhouse+http" | "clickhouse+https" => {
+            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
+        }
+        #[cfg(feature = "clickhouse-native")]
+        "clickhouse" | "clickhouse+native" | "ch" | "clickhouses" | "clickhouse+natives"
+        | "chs" => Arc::new(ClickhouseNativeBackend::connect(&args.database_url).await?),
+        #[cfg(not(feature = "clickhouse-native"))]
+        "clickhouse" | "ch" | "chs" => {
             Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
         }
         #[cfg(feature = "sqlite")]

@@ -9,7 +9,8 @@ MCP-сервер для SQL-баз с read-only доступом через stdi
 | `postgres://` / `postgresql://` | PostgreSQL | `tokio-postgres` |
 | `mysql://` | MySQL / MariaDB | `mysql_async` |
 | `sqlite://` / `sqlite:` | SQLite | `rusqlite` (bundled) |
-| `clickhouse://` / `clickhouse+https://` | ClickHouse | HTTP (`reqwest`) |
+| `clickhouse://` / `clickhouses://` | ClickHouse | native protocol (`klickhouse`) |
+| `clickhouse+http://` / `clickhouse+https://` | ClickHouse | HTTP (`reqwest`) |
 
 ## Установка
 
@@ -61,7 +62,9 @@ URL передаётся флагом `--database-url` или переменно
 ./target/release/db-mcp --database-url postgres://user:pass@localhost:5432/mydb
 ./target/release/db-mcp --database-url mysql://user:pass@localhost:3306/mydb
 ./target/release/db-mcp --database-url sqlite:///absolute/path/to/data.db
-./target/release/db-mcp --database-url clickhouse://default:pass@localhost:8123/default
+./target/release/db-mcp --database-url clickhouse://default:pass@localhost:9000/default
+./target/release/db-mcp --database-url clickhouses://user:pass@host.cloud:9440/default
+./target/release/db-mcp --database-url clickhouse+http://default:pass@localhost:8123/default
 ./target/release/db-mcp --database-url clickhouse+https://user:pass@host.cloud:8443/default
 DATABASE_URL=sqlite::memory: ./target/release/db-mcp
 ```
@@ -191,7 +194,16 @@ claude mcp add db \
 
 #### ClickHouse
 
-Используется HTTP-интерфейс, формат `JSONEachRow` с `output_format_json_quote_64bit_integers=0`. Дефолтный порт `8123` (HTTP) и `8443` (HTTPS, схема `clickhouse+https://`). Тип-маппинг — родной для ClickHouse:
+Два транспорта:
+
+| Схема | Транспорт | Порт по умолчанию |
+|-------|-----------|-------------------|
+| `clickhouse://`, `clickhouse+native://`, `ch://` | native | 9000 |
+| `clickhouses://`, `clickhouse+natives://`, `chs://` | native + TLS | 9440 |
+| `clickhouse+http://` | HTTP | 8123 |
+| `clickhouse+https://` | HTTPS | 8443 |
+
+Native-бэкенд (`klickhouse`) собирается под фичей `clickhouse-native` (включена по умолчанию); при сборке без неё схемы `clickhouse://` / `ch://` / `chs://` уходят в HTTP-бэкенд, как раньше. HTTP-бэкенд использует формат `JSONEachRow` с `output_format_json_quote_64bit_integers=0`. Тип-маппинг — родной для ClickHouse:
 
 - `Int*` / `UInt*` (включая 64-битные) → JSON number
 - `Float32` / `Float64` → JSON number (NaN/Inf → строка)

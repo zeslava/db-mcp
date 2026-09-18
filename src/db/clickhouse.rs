@@ -18,6 +18,7 @@ impl ClickhouseBackend {
         let (http_scheme, default_port) = match parsed.scheme() {
             "clickhouse" | "clickhouse+http" | "ch" => ("http", 8123u16),
             "clickhouse+https" | "chs" => ("https", 8443),
+            // kept for builds without the native backend
             other => bail!("unsupported clickhouse scheme: {other}"),
         };
         let host = parsed.host_str().context("clickhouse url missing host")?;
@@ -165,7 +166,7 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%'
-            && i + 2 < bytes.len()
+            && i + 3 <= bytes.len()
             && let (Some(h), Some(l)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2]))
         {
             out.push((h << 4) | l);

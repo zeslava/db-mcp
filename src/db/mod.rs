@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use serde_json::{Map, Value};
 
 pub mod clickhouse;
+#[cfg(feature = "clickhouse-native")]
+pub mod clickhouse_native;
 pub mod mysql;
 pub mod postgres;
 #[cfg(feature = "sqlite")]
