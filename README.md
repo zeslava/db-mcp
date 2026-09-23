@@ -69,6 +69,16 @@ URL передаётся флагом `--database-url` или переменно
 DATABASE_URL=sqlite::memory: ./target/release/db-mcp
 ```
 
+Чтобы не держать креденшелы в конфиге клиента, URL можно положить в env-файл и передать его через `--env-file` или `ENV_FILE`:
+
+```bash
+echo 'DATABASE_URL=postgres://user:pass@localhost:5432/mydb' > ~/.config/db-mcp.env
+./target/release/db-mcp --env-file ~/.config/db-mcp.env
+ENV_FILE=~/.config/db-mcp.env ./target/release/db-mcp
+```
+
+Переменные, уже заданные в окружении, приоритетнее значений из файла.
+
 Логи — в stderr, JSON-RPC — в stdout. Уровень логов через `RUST_LOG` (например, `RUST_LOG=debug`).
 
 ## Подключение к клиентам
