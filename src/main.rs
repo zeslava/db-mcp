@@ -63,6 +63,57 @@ fn pick_env_file<I: Iterator<Item = OsString>>(
     path.or_else(|| env_var.map(PathBuf::from))
 }
 
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
+
+    load_env_file()?;
+
+    let args = Args::parse();
+
+    let scheme = args
+        .database_url
+        .split_once("://")
+        .map(|(s, _)| s)
+        .or_else(|| args.database_url.split_once(':').map(|(s, _)| s))
+        .unwrap_or("");
+
+    let backend: Arc<dyn Database> = match scheme {
+        "postgres" | "postgresql" => Arc::new(PgBackend::connect(&args.database_url).await?),
+        "mysql" => Arc::new(MysqlBackend::connect(&args.database_url).await?),
+        "clickhouse+http" | "clickhouse+https" => {
+            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
+        }
+        #[cfg(feature = "clickhouse-native")]
+        "clickhouse" | "clickhouse+native" | "ch" | "clickhouses" | "clickhouse+natives"
+        | "chs" => Arc::new(ClickhouseNativeBackend::connect(&args.database_url).await?),
+        #[cfg(not(feature = "clickhouse-native"))]
+        "clickhouse" | "ch" | "chs" => {
+            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
+        }
+        #[cfg(feature = "sqlite")]
+        "sqlite" => Arc::new(SqliteBackend::open(&args.database_url).await?),
+        other => bail!("unsupported database url scheme: {other:?}"),
+    };
+
+    tracing::info!("Connected to {}, starting MCP server", backend.name());
+
+    let service = DbServer::new(backend)
+        .serve(stdio())
+        .await
+        .inspect_err(|e| tracing::error!("MCP server error: {e}"))?;
+
+    service.waiting().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,55 +177,4 @@ mod tests {
     fn missing_file_is_an_error() {
         assert!(dotenvy::from_path(std::path::Path::new("/nope/missing.env")).is_err());
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
-        .with_writer(std::io::stderr)
-        .with_ansi(false)
-        .init();
-
-    load_env_file()?;
-
-    let args = Args::parse();
-
-    let scheme = args
-        .database_url
-        .split_once("://")
-        .map(|(s, _)| s)
-        .or_else(|| args.database_url.split_once(':').map(|(s, _)| s))
-        .unwrap_or("");
-
-    let backend: Arc<dyn Database> = match scheme {
-        "postgres" | "postgresql" => Arc::new(PgBackend::connect(&args.database_url).await?),
-        "mysql" => Arc::new(MysqlBackend::connect(&args.database_url).await?),
-        "clickhouse+http" | "clickhouse+https" => {
-            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
-        }
-        #[cfg(feature = "clickhouse-native")]
-        "clickhouse" | "clickhouse+native" | "ch" | "clickhouses" | "clickhouse+natives"
-        | "chs" => Arc::new(ClickhouseNativeBackend::connect(&args.database_url).await?),
-        #[cfg(not(feature = "clickhouse-native"))]
-        "clickhouse" | "ch" | "chs" => {
-            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
-        }
-        #[cfg(feature = "sqlite")]
-        "sqlite" => Arc::new(SqliteBackend::open(&args.database_url).await?),
-        other => bail!("unsupported database url scheme: {other:?}"),
-    };
-
-    tracing::info!("Connected to {}, starting MCP server", backend.name());
-
-    let service = DbServer::new(backend)
-        .serve(stdio())
-        .await
-        .inspect_err(|e| tracing::error!("MCP server error: {e}"))?;
-
-    service.waiting().await?;
-    Ok(())
 }
