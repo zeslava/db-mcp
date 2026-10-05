@@ -6,12 +6,44 @@ use crate::common::{McpClient, flatten_values};
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn sqlite_e2e() {
-    let file = NamedTempFile::new().expect("tempfile");
-    let path = file.path().to_path_buf();
-    let url = format!("sqlite://{}", path.display());
+    let file = seeded_db();
+    let client = McpClient::spawn(&url(&file)).await.expect("spawn mcp");
+    run_suite(&client).await;
+    client.shutdown().await;
+}
 
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn sqlite_http_e2e() {
+    let file = seeded_db();
+    let (client, addr) = McpClient::spawn_http(&url(&file))
+        .await
+        .expect("spawn mcp http");
+    run_suite(&client).await;
+
+    // DNS rebinding protection: only loopback hosts are accepted by default
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/mcp"))
+        .header("Host", "evil.example")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .body("{}")
+        .send()
+        .await
+        .expect("send request");
+    assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+
+    client.shutdown().await;
+}
+
+fn url(file: &NamedTempFile) -> String {
+    format!("sqlite://{}", file.path().display())
+}
+
+fn seeded_db() -> NamedTempFile {
+    let file = NamedTempFile::new().expect("tempfile");
     {
-        let conn = rusqlite::Connection::open(&path).expect("open sqlite");
+        let conn = rusqlite::Connection::open(file.path()).expect("open sqlite");
         conn.execute_batch(
             "CREATE TABLE users (
                 id INTEGER PRIMARY KEY,
@@ -25,9 +57,10 @@ async fn sqlite_e2e() {
         )
         .expect("seed sqlite");
     }
+    file
+}
 
-    let client = McpClient::spawn(&url).await.expect("spawn mcp");
-
+async fn run_suite(client: &McpClient) {
     let tables = client.call_json("list_tables", json!({})).await.unwrap();
     assert!(
         tables
@@ -90,6 +123,4 @@ async fn sqlite_e2e() {
         )
         .await;
     assert!(bad.is_err(), "expected SELECT-only rejection, got {bad:?}");
-
-    client.shutdown().await;
 }

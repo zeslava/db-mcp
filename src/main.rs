@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rmcp::{ServiceExt, transport::stdio};
 
 use crate::db::Database;
@@ -29,12 +29,33 @@ struct Args {
     #[arg(long, env = "DATABASE_URL")]
     database_url: String,
 
+    #[arg(long, env = "MCP_TRANSPORT", value_enum, default_value_t = Transport::Stdio)]
+    transport: Transport,
+
+    /// Listen address for the http transport
+    #[cfg(feature = "http")]
+    #[arg(long, env = "MCP_BIND", default_value = "127.0.0.1:8080")]
+    bind: std::net::SocketAddr,
+
+    /// Accepted Host header values for the http transport (DNS rebinding protection);
+    /// defaults to loopback hosts only
+    #[cfg(feature = "http")]
+    #[arg(long, env = "MCP_ALLOWED_HOSTS", value_delimiter = ',')]
+    allowed_hosts: Vec<String>,
+
     /// Path to an env file with DATABASE_URL (existing env vars win)
     #[arg(long, env = "ENV_FILE")]
     env_file: Option<PathBuf>,
 
     #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
     version: Option<bool>,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Transport {
+    Stdio,
+    #[cfg(feature = "http")]
+    Http,
 }
 
 /// Loads `--env-file` / `ENV_FILE` before clap parses, so its `env` fallbacks see the values.
@@ -105,12 +126,57 @@ async fn main() -> Result<()> {
 
     tracing::info!("Connected to {}, starting MCP server", backend.name());
 
+    match args.transport {
+        Transport::Stdio => serve_stdio(backend).await,
+        #[cfg(feature = "http")]
+        Transport::Http => serve_http(backend, args.bind, args.allowed_hosts).await,
+    }
+}
+
+async fn serve_stdio(backend: Arc<dyn Database>) -> Result<()> {
     let service = DbServer::new(backend)
         .serve(stdio())
         .await
         .inspect_err(|e| tracing::error!("MCP server error: {e}"))?;
 
     service.waiting().await?;
+    Ok(())
+}
+
+#[cfg(feature = "http")]
+async fn serve_http(
+    backend: Arc<dyn Database>,
+    bind: std::net::SocketAddr,
+    allowed_hosts: Vec<String>,
+) -> Result<()> {
+    use rmcp::transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    };
+
+    let mut config = StreamableHttpServerConfig::default();
+    if !allowed_hosts.is_empty() {
+        config = config.with_allowed_hosts(allowed_hosts);
+    }
+    let cancel = config.cancellation_token.clone();
+
+    let service = StreamableHttpService::new(
+        move || Ok(DbServer::new(backend.clone())),
+        Arc::new(LocalSessionManager::default()),
+        config,
+    );
+    let router = axum::Router::new().nest_service("/mcp", service);
+
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .with_context(|| format!("failed to bind {bind}"))?;
+    tracing::info!("Listening on http://{bind}/mcp");
+
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            cancel.cancel();
+        })
+        .await?;
     Ok(())
 }
 

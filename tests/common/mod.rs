@@ -5,13 +5,15 @@ use rmcp::{
     ServiceExt,
     model::{CallToolRequestParams, CallToolResult, RawContent},
     service::{RoleClient, RunningService},
-    transport::TokioChildProcess,
+    transport::{StreamableHttpClientTransport, TokioChildProcess},
 };
 use serde_json::{Map, Value};
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 pub struct McpClient {
     pub service: RunningService<RoleClient, ()>,
+    /// Server process in http mode; killed on drop.
+    child: Option<Child>,
 }
 
 impl McpClient {
@@ -20,7 +22,44 @@ impl McpClient {
         cmd.arg("--database-url").arg(database_url);
         let transport = TokioChildProcess::new(cmd).context("spawn db-mcp child process")?;
         let service = ().serve(transport).await.context("MCP handshake with db-mcp")?;
-        Ok(Self { service })
+        Ok(Self {
+            service,
+            child: None,
+        })
+    }
+
+    /// Starts db-mcp with `--transport http` on a free loopback port and connects to `/mcp`.
+    /// Returns the client and the server base address (`127.0.0.1:<port>`).
+    pub async fn spawn_http(database_url: &str) -> Result<(Self, String)> {
+        let addr = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?;
+        let child = Command::new(env!("CARGO_BIN_EXE_db-mcp"))
+            .arg("--database-url")
+            .arg(database_url)
+            .arg("--transport")
+            .arg("http")
+            .arg("--bind")
+            .arg(addr.to_string())
+            .kill_on_drop(true)
+            .spawn()
+            .context("spawn db-mcp http server")?;
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while tokio::net::TcpStream::connect(addr).await.is_err() {
+            if tokio::time::Instant::now() > deadline {
+                return Err(anyhow!("db-mcp did not start listening on {addr}"));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        let transport = StreamableHttpClientTransport::from_uri(format!("http://{addr}/mcp"));
+        let service = ().serve(transport).await.context("MCP handshake over http")?;
+        Ok((
+            Self {
+                service,
+                child: Some(child),
+            },
+            addr.to_string(),
+        ))
     }
 
     pub async fn call(&self, name: &'static str, args: Value) -> Result<CallToolResult> {
@@ -57,8 +96,11 @@ impl McpClient {
         Ok(serde_json::from_str(&txt)?)
     }
 
-    pub async fn shutdown(self) {
+    pub async fn shutdown(mut self) {
         let _ = self.service.cancel().await;
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill().await;
+        }
     }
 }
 
