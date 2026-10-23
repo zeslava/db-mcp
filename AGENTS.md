@@ -6,12 +6,13 @@ Guidance for AI coding agents working in this repository.
 
 Single-binary MCP server (stdio or Streamable HTTP) exposing read-only SQL tools across multiple database engines.
 
-- Entry point: `src/main.rs` — CLI parsing, URL-scheme dispatch to a backend, server bootstrap.
-- Server layer: `src/server.rs` — `DbServer` holding `Arc<dyn Database>` and a `ToolRouter<DbServer>`. Tools are engine-agnostic.
+- Entry point: `src/main.rs` — CLI parsing, URL-scheme dispatch to a backend (`connect`), concurrent startup connection to all databases (`connect_all`, fail-fast), server bootstrap.
+- Config: `src/config.rs` — JSON multi-database config (`--config` / `DB_MCP_CONFIG`, mutually exclusive with `DATABASE_URL`): `databases.<name>.{url | url_env, description?}`, `${VAR}` substitution in `url`. `DATABASE_URL` alone becomes a single database named `default`.
+- Server layer: `src/server.rs` — `DbServer` holding `Arc<BTreeMap<String, NamedDb>>` (backend + description) and a `ToolRouter<DbServer>`. Tools are engine-agnostic; every tool except `list_databases` takes `database: Option<String>`, resolved by `DbServer::resolve` — optional with one database, required with several (no implicit default).
 - Backends: `src/db/<engine>.rs` — each implements the `Database` trait from `src/db/mod.rs`. Most engines are always compiled in; SQLite is behind the `sqlite` Cargo feature (enabled by default).
 - Stack: `rmcp` 1.5 (MCP SDK), `axum` (HTTP transport), `clap` for CLI/env config, `async-trait` for the dyn-compatible backend port. Drivers: `tokio-postgres`, `mysql_async`, `rusqlite` (optional, feature `sqlite`), `reqwest` (ClickHouse HTTP).
 - Release Linux targets use `*-unknown-linux-musl` for fully static binaries (no glibc at runtime). Cross-compilation via `taiki-e/setup-cross-toolchain-action`.
-- Transport: stdio by default; `--transport http` (feature `http`, on by default) serves rmcp `StreamableHttpService` via `axum` at `/mcp`, with `--bind` and `--allowed-hosts` (Host-header DNS-rebinding check, loopback-only by default). No auth in HTTP mode. One backend connection is shared across all HTTP sessions. Tracing writes to stderr — never log to stdout, it corrupts the JSON-RPC stream.
+- Transport: stdio by default; `--transport http` (feature `http`, on by default) serves rmcp `StreamableHttpService` via `axum` at `/mcp`, with `--bind` and `--allowed-hosts` (Host-header DNS-rebinding check, loopback-only by default). No auth in HTTP mode. One connection per configured database is shared across all HTTP sessions. Tracing writes to stderr — never log to stdout, it corrupts the JSON-RPC stream.
 
 ## Commands
 
@@ -23,6 +24,7 @@ cargo run -- --database-url sqlite:///absolute/path/to.db
 cargo run -- --database-url clickhouse://default:pass@host:9000/db
 DATABASE_URL=postgres://user:pass@host/db cargo run
 cargo run -- --database-url sqlite:///tmp/t.db --transport http --bind 127.0.0.1:8080
+cargo run -- --config db-mcp.json --env-file .env   # several named databases
 cargo fmt --all                # run before every commit
 cargo fmt --all -- --check     # CI gate
 cargo clippy --all-targets -- -D warnings
@@ -62,12 +64,12 @@ pub trait Database: Send + Sync {
 Adding a new engine:
 1. Add the driver dep to `Cargo.toml`.
 2. Create `src/db/<engine>.rs` with a `Backend` struct and `impl Database`.
-3. Wire the URL scheme in `main::main`.
+3. Wire the URL scheme in `main::connect`.
 4. Document the type-mapping in README.
 
 ### Server
 
-`src/server.rs::DbServer` declares the tools (`query`, `explain`, `list_tables`, `describe_table`) once with `#[tool_router]` / `#[tool_handler]`. The SELECT-only enforcement lives here, not in adapters.
+`src/server.rs::DbServer` declares the tools (`list_databases`, `query`, `explain`, `list_tables`, `describe_table`) once with `#[tool_router]` / `#[tool_handler]`. The SELECT-only enforcement lives here, not in adapters.
 
 ## Conventions
 
@@ -88,6 +90,8 @@ Adding a new engine:
 E2E-тесты в `tests/` поднимают БД в Docker через `testcontainers` (`postgres`, `mysql`, `clickhouse`) либо во временном файле (`sqlite`), накатывают схему и сидят данные родным драйвером, запускают `db-mcp` как дочерний процесс и общаются по stdio через `rmcp`-клиента.
 
 HTTP-транспорт покрыт `sqlite_http_e2e` (`tests/backends/sqlite.rs`): `McpClient::spawn_http` запускает сервер с `--transport http` на свободном loopback-порту и подключается через `StreamableHttpClientTransport`; тот же набор проверок плюс отказ (403) на чужой `Host`. Транспорт не зависит от движка, поэтому HTTP проверяется только на SQLite.
+
+Мульти-БД режим покрыт `sqlite_multi_db_e2e`: `McpClient::spawn_config` запускает сервер с `--config` на двух SQLite-файлах (`${VAR}` и `url_env`), проверяются `list_databases`, маршрутизация по `database` и ошибки при отсутствующем/неизвестном имени.
 
 ```bash
 cargo test --test integration -- --ignored

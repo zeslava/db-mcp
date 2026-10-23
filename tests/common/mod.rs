@@ -20,6 +20,20 @@ impl McpClient {
     pub async fn spawn(database_url: &str) -> Result<Self> {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_db-mcp"));
         cmd.arg("--database-url").arg(database_url);
+        Self::spawn_cmd(cmd).await
+    }
+
+    /// Starts db-mcp with `--config`; `envs` are passed to the child for `${VAR}` / `url_env`.
+    pub async fn spawn_config(config: &std::path::Path, envs: &[(&str, &str)]) -> Result<Self> {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_db-mcp"));
+        cmd.arg("--config")
+            .arg(config)
+            .env_remove("DATABASE_URL")
+            .envs(envs.iter().copied());
+        Self::spawn_cmd(cmd).await
+    }
+
+    async fn spawn_cmd(cmd: Command) -> Result<Self> {
         let transport = TokioChildProcess::new(cmd).context("spawn db-mcp child process")?;
         let service = ().serve(transport).await.context("MCP handshake with db-mcp")?;
         Ok(Self {

@@ -1,6 +1,8 @@
+mod config;
 mod db;
 mod server;
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,7 +19,9 @@ use crate::db::mysql::MysqlBackend;
 use crate::db::postgres::PgBackend;
 #[cfg(feature = "sqlite")]
 use crate::db::sqlite::SqliteBackend;
-use crate::server::DbServer;
+use crate::server::{DbServer, NamedDb};
+
+type Dbs = Arc<BTreeMap<String, NamedDb>>;
 
 #[derive(Parser)]
 #[command(
@@ -27,7 +31,11 @@ use crate::server::DbServer;
 )]
 struct Args {
     #[arg(long, env = "DATABASE_URL")]
-    database_url: String,
+    database_url: Option<String>,
+
+    /// JSON config with several named databases (mutually exclusive with DATABASE_URL)
+    #[arg(long, env = "DB_MCP_CONFIG")]
+    config: Option<PathBuf>,
 
     #[arg(long, env = "MCP_TRANSPORT", value_enum, default_value_t = Transport::Stdio)]
     transport: Transport,
@@ -99,42 +107,75 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let scheme = args
-        .database_url
-        .split_once("://")
-        .map(|(s, _)| s)
-        .or_else(|| args.database_url.split_once(':').map(|(s, _)| s))
-        .unwrap_or("");
-
-    let backend: Arc<dyn Database> = match scheme {
-        "postgres" | "postgresql" => Arc::new(PgBackend::connect(&args.database_url).await?),
-        "mysql" => Arc::new(MysqlBackend::connect(&args.database_url).await?),
-        "clickhouse+http" | "clickhouse+https" => {
-            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
-        }
-        #[cfg(feature = "clickhouse-native")]
-        "clickhouse" | "clickhouse+native" | "ch" | "clickhouses" | "clickhouse+natives"
-        | "chs" => Arc::new(ClickhouseNativeBackend::connect(&args.database_url).await?),
-        #[cfg(not(feature = "clickhouse-native"))]
-        "clickhouse" | "ch" | "chs" => {
-            Arc::new(ClickhouseBackend::connect(&args.database_url).await?)
-        }
-        #[cfg(feature = "sqlite")]
-        "sqlite" => Arc::new(SqliteBackend::open(&args.database_url).await?),
-        other => bail!("unsupported database url scheme: {other:?}"),
+    let specs = match (args.config, args.database_url) {
+        (Some(_), Some(_)) => bail!("--config and DATABASE_URL are mutually exclusive"),
+        (None, None) => bail!("either --config or DATABASE_URL is required"),
+        (Some(path), None) => config::load(&path)?,
+        (None, Some(url)) => vec![config::DbSpec {
+            name: "default".into(),
+            url,
+            description: None,
+        }],
     };
 
-    tracing::info!("Connected to {}, starting MCP server", backend.name());
+    let dbs = connect_all(specs).await?;
 
     match args.transport {
-        Transport::Stdio => serve_stdio(backend).await,
+        Transport::Stdio => serve_stdio(dbs).await,
         #[cfg(feature = "http")]
-        Transport::Http => serve_http(backend, args.bind, args.allowed_hosts).await,
+        Transport::Http => serve_http(dbs, args.bind, args.allowed_hosts).await,
     }
 }
 
-async fn serve_stdio(backend: Arc<dyn Database>) -> Result<()> {
-    let service = DbServer::new(backend)
+/// Connects concurrently and fails if any database is unreachable.
+async fn connect_all(specs: Vec<config::DbSpec>) -> Result<Dbs> {
+    let mut set = tokio::task::JoinSet::new();
+    for spec in specs {
+        set.spawn(async move {
+            let backend = connect(&spec.url)
+                .await
+                .with_context(|| format!("database {:?}", spec.name))?;
+            tracing::info!("Connected to {} ({})", spec.name, backend.name());
+            let db = NamedDb {
+                backend,
+                description: spec.description,
+            };
+            anyhow::Ok((spec.name, db))
+        });
+    }
+
+    let mut dbs = BTreeMap::new();
+    while let Some(res) = set.join_next().await {
+        let (name, db) = res??;
+        dbs.insert(name, db);
+    }
+    Ok(Arc::new(dbs))
+}
+
+async fn connect(url: &str) -> Result<Arc<dyn Database>> {
+    let scheme = url
+        .split_once("://")
+        .map(|(s, _)| s)
+        .or_else(|| url.split_once(':').map(|(s, _)| s))
+        .unwrap_or("");
+
+    Ok(match scheme {
+        "postgres" | "postgresql" => Arc::new(PgBackend::connect(url).await?),
+        "mysql" => Arc::new(MysqlBackend::connect(url).await?),
+        "clickhouse+http" | "clickhouse+https" => Arc::new(ClickhouseBackend::connect(url).await?),
+        #[cfg(feature = "clickhouse-native")]
+        "clickhouse" | "clickhouse+native" | "ch" | "clickhouses" | "clickhouse+natives"
+        | "chs" => Arc::new(ClickhouseNativeBackend::connect(url).await?),
+        #[cfg(not(feature = "clickhouse-native"))]
+        "clickhouse" | "ch" | "chs" => Arc::new(ClickhouseBackend::connect(url).await?),
+        #[cfg(feature = "sqlite")]
+        "sqlite" => Arc::new(SqliteBackend::open(url).await?),
+        other => bail!("unsupported database url scheme: {other:?}"),
+    })
+}
+
+async fn serve_stdio(dbs: Dbs) -> Result<()> {
+    let service = DbServer::new(dbs)
         .serve(stdio())
         .await
         .inspect_err(|e| tracing::error!("MCP server error: {e}"))?;
@@ -145,7 +186,7 @@ async fn serve_stdio(backend: Arc<dyn Database>) -> Result<()> {
 
 #[cfg(feature = "http")]
 async fn serve_http(
-    backend: Arc<dyn Database>,
+    dbs: Dbs,
     bind: std::net::SocketAddr,
     allowed_hosts: Vec<String>,
 ) -> Result<()> {
@@ -160,7 +201,7 @@ async fn serve_http(
     let cancel = config.cancellation_token.clone();
 
     let service = StreamableHttpService::new(
-        move || Ok(DbServer::new(backend.clone())),
+        move || Ok(DbServer::new(dbs.clone())),
         Arc::new(LocalSessionManager::default()),
         config,
     );

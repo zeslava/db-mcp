@@ -36,6 +36,85 @@ async fn sqlite_http_e2e() {
     client.shutdown().await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn sqlite_multi_db_e2e() {
+    let users = seeded_db();
+    let orders = NamedTempFile::new().expect("tempfile");
+    rusqlite::Connection::open(orders.path())
+        .expect("open sqlite")
+        .execute_batch(
+            "CREATE TABLE orders (id INTEGER PRIMARY KEY, total INTEGER NOT NULL);
+             INSERT INTO orders (id, total) VALUES (10, 500);",
+        )
+        .expect("seed sqlite");
+
+    let mut config = NamedTempFile::new().expect("tempfile");
+    serde_json::to_writer(
+        &mut config,
+        &json!({"databases": {
+            "users": {"url": "sqlite://${USERS_DB_PATH}", "description": "accounts"},
+            "orders": {"url_env": "ORDERS_DB_URL"}
+        }}),
+    )
+    .expect("write config");
+
+    let users_path = users.path().display().to_string();
+    let orders_url = url(&orders);
+    let client = McpClient::spawn_config(
+        config.path(),
+        &[
+            ("USERS_DB_PATH", users_path.as_str()),
+            ("ORDERS_DB_URL", orders_url.as_str()),
+        ],
+    )
+    .await
+    .expect("spawn mcp");
+
+    let dbs = client.call_json("list_databases", json!({})).await.unwrap();
+    assert_eq!(
+        dbs,
+        json!([
+            {"name": "orders", "engine": "SQLite", "description": null},
+            {"name": "users", "engine": "SQLite", "description": "accounts"}
+        ])
+    );
+
+    let rows = client
+        .call_json(
+            "query",
+            json!({"sql": "SELECT total FROM orders", "database": "orders"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows, json!([{"total": 500}]));
+
+    let cols = client
+        .call_json(
+            "describe_table",
+            json!({"table": "users", "database": "users"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(cols.as_array().unwrap().len(), 4);
+
+    let missing = client.call("query", json!({"sql": "SELECT 1"})).await;
+    assert!(
+        missing.is_err(),
+        "expected `database` required, got {missing:?}"
+    );
+
+    let unknown = client
+        .call("list_tables", json!({"database": "nope"}))
+        .await;
+    assert!(
+        unknown.is_err(),
+        "expected unknown database error, got {unknown:?}"
+    );
+
+    client.shutdown().await;
+}
+
 fn url(file: &NamedTempFile) -> String {
     format!("sqlite://{}", file.path().display())
 }
