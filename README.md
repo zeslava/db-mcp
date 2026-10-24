@@ -1,5 +1,7 @@
 # db-mcp
 
+**Русский** | [English](./README.en.md)
+
 MCP-сервер для SQL-баз с read-only доступом через stdio или HTTP (Streamable HTTP). Один бинарник со всеми движками — выбор по схеме URL.
 
 Поддерживаемые движки:
