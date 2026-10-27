@@ -39,7 +39,17 @@ impl ClickhouseNativeBackend {
                 .await
                 .map_err(anyhow::Error::from)
         }
-        .context("Failed to connect to ClickHouse")?;
+        .with_context(|| {
+            // JDBC/DBeaver treat clickhouse:// as HTTP, so copied URLs often carry an HTTP port
+            let hint = match port {
+                8123 | 8443 => {
+                    "; port looks like ClickHouse HTTP, use clickhouse+http:// or clickhouse+https://"
+                }
+                _ => "",
+            };
+            let proto = if tls { "native+tls" } else { "native" };
+            format!("Failed to connect to ClickHouse ({proto}, {host}:{port}){hint}")
+        })?;
 
         Ok(Self { client })
     }

@@ -53,7 +53,15 @@ impl ClickhouseBackend {
         backend
             .post("SELECT 1", &[])
             .await
-            .context("Failed to connect to ClickHouse")?;
+            .with_context(|| {
+                let hint = match port {
+                    9000 | 9440 => {
+                        "; port looks like ClickHouse native protocol, use clickhouse:// or clickhouses://"
+                    }
+                    _ => "",
+                };
+                format!("Failed to connect to ClickHouse ({http_scheme}, {host}:{port}){hint}")
+            })?;
         Ok(backend)
     }
 
