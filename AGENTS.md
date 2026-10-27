@@ -60,7 +60,7 @@ pub trait Database: Send + Sync {
 - `src/db/mysql.rs` — `mysql_async` pool, binary protocol via `Row`/`Value`, JSON columns parsed when `ColumnType::MYSQL_TYPE_JSON`.
 - `src/db/sqlite.rs` — `rusqlite` driven via `spawn_blocking`.
 - `src/db/clickhouse.rs` — HTTP interface via `reqwest`, `JSONEachRow` format with `output_format_json_quote_64bit_integers=0`, parameterized via `param_*` URL params. Schemes: `clickhouse+http://` (port 8123) / `clickhouse+https://` (port 8443).
-- `src/db/clickhouse_native.rs` — native protocol via `klickhouse` (feature `clickhouse-native`, on by default), `$1` placeholders for parameters, `Value`→`serde_json` conversion per column `Type`. Schemes: `clickhouse://` / `clickhouse+native://` / `ch://` (port 9000), `clickhouses://` / `clickhouse+natives://` / `chs://` (TLS, port 9440).
+- `src/db/clickhouse_native.rs` — native protocol via `klickhouse` (feature `clickhouse-native`, on by default), `$1` placeholders for parameters, `Value`→`serde_json` conversion per column `Type`. Schemes: `clickhouse://` / `clickhouse+native://` / `ch://` (port 9000), `clickhouses://` / `clickhouse+natives://` / `chs://` (TLS, port 9440). `klickhouse` is a patched copy in `patches/klickhouse` (via `[patch.crates-io]`): upstream only decodes LZ4, the patch adds ZSTD for servers with `network_compression_method = 'zstd'`. Drop it once upstream supports ZSTD.
 
 Adding a new engine:
 1. Add the driver dep to `Cargo.toml`.
@@ -93,6 +93,8 @@ E2E-тесты в `tests/` поднимают БД в Docker через `testcon
 HTTP-транспорт покрыт `sqlite_http_e2e` (`tests/backends/sqlite.rs`): `McpClient::spawn_http` запускает сервер с `--transport http` на свободном loopback-порту и подключается через `StreamableHttpClientTransport`; тот же набор проверок плюс отказ (403) на чужой `Host`. Транспорт не зависит от движка, поэтому HTTP проверяется только на SQLite.
 
 Мульти-БД режим покрыт `sqlite_multi_db_e2e`: `McpClient::spawn_config` запускает сервер с `--config` на двух SQLite-файлах (`${VAR}` и `url_env`), проверяются `list_databases`, маршрутизация по `database` и ошибки при отсутствующем/неизвестном имени.
+
+ClickHouse поднимается в версии 26.8 (целевая версия сервера, не дефолт `testcontainers-modules`). `clickhouse_native_e2e` дополнительно прогоняет набор под пользователем `zstd`, у которого профиль задаёт `network_compression_method = 'zstd'` — проверка патча `patches/klickhouse`.
 
 ```bash
 cargo test --test integration -- --ignored

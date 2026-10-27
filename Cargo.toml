@@ -1,6 +1,6 @@
 [package]
 name = "db-mcp"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 
 [features]
@@ -47,3 +47,7 @@ testcontainers-modules = { version = "0.11", features = ["postgres", "mysql", "c
 rmcp = { version = "1.5", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full"] }
+
+# klickhouse 0.15.3 + ZSTD decompression, see patches/klickhouse/src/compression.rs
+[patch.crates-io]
+klickhouse = { path = "patches/klickhouse" }

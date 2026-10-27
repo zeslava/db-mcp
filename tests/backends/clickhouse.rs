@@ -1,13 +1,31 @@
 use serde_json::json;
-use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerRequest, ImageExt, runners::AsyncRunner};
 use testcontainers_modules::clickhouse::ClickHouse;
 
 use crate::common::McpClient;
 
+// user whose profile makes the server compress native-protocol blocks with ZSTD instead of LZ4
+const ZSTD_USER_XML: &str = "<clickhouse>\
+    <profiles><zstd><network_compression_method>zstd</network_compression_method></zstd></profiles>\
+    <users><zstd><password></password><networks><ip>::/0</ip></networks>\
+    <profile>zstd</profile><quota>default</quota></zstd></users>\
+    </clickhouse>";
+
+fn clickhouse() -> ContainerRequest<ClickHouse> {
+    ClickHouse::default()
+        .with_tag("26.8")
+        // newer images only let the passwordless default user in from localhost
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .with_copy_to(
+            "/etc/clickhouse-server/users.d/zstd.xml",
+            ZSTD_USER_XML.as_bytes().to_vec(),
+        )
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn clickhouse_http_e2e() {
-    let container = ClickHouse::default()
+    let container = clickhouse()
         .start()
         .await
         .expect("start clickhouse container");
@@ -25,7 +43,7 @@ async fn clickhouse_http_e2e() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn clickhouse_native_e2e() {
-    let container = ClickHouse::default()
+    let container = clickhouse()
         .start()
         .await
         .expect("start clickhouse container");
@@ -53,6 +71,8 @@ async fn clickhouse_native_e2e() {
     assert_eq!(rows[0]["meta"], json!({"k": 7}));
     assert_eq!(rows[0]["day"], "2024-05-01");
     client.shutdown().await;
+
+    run_suite(&format!("clickhouse://zstd@{host}:{native_port}/default")).await;
 }
 
 async fn run_suite(db_url: &str) {

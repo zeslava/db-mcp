@@ -813,7 +813,7 @@ checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
 name = "db-mcp"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1797,8 +1797,6 @@ dependencies = [
 [[package]]
 name = "klickhouse"
 version = "0.15.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43df4e6356e65204d50730a3699b49a0ad345a947b725a0aaf7544f691c8e98a"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1821,6 +1819,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
