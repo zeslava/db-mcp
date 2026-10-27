@@ -25,6 +25,7 @@ cargo run -- --database-url clickhouse://default:pass@host:9000/db
 DATABASE_URL=postgres://user:pass@host/db cargo run
 cargo run -- --database-url sqlite:///tmp/t.db --transport http --bind 127.0.0.1:8080
 cargo run -- --config db-mcp.json --env-file .env   # several named databases
+cargo run -- --config db-mcp.json --check           # SELECT 1 on every database, exit 0/1, no MCP
 cargo fmt --all                # run before every commit
 cargo fmt --all -- --check     # CI gate
 cargo clippy --all-targets -- -D warnings

@@ -55,6 +55,10 @@ struct Args {
     #[arg(long, env = "ENV_FILE")]
     env_file: Option<PathBuf>,
 
+    /// Run SELECT 1 against every database, print the results and exit
+    #[arg(long)]
+    check: bool,
+
     #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
     version: Option<bool>,
 }
@@ -118,6 +122,10 @@ async fn main() -> Result<()> {
         }],
     };
 
+    if args.check {
+        return check_all(specs).await;
+    }
+
     let dbs = connect_all(specs).await?;
 
     match args.transport {
@@ -150,6 +158,39 @@ async fn connect_all(specs: Vec<config::DbSpec>) -> Result<Dbs> {
         dbs.insert(name, db);
     }
     Ok(Arc::new(dbs))
+}
+
+/// Unlike `connect_all`, reports every database instead of stopping at the first failure.
+async fn check_all(specs: Vec<config::DbSpec>) -> Result<()> {
+    let mut set = tokio::task::JoinSet::new();
+    for spec in specs {
+        set.spawn(async move {
+            let started = std::time::Instant::now();
+            let res = async { connect(&spec.url).await?.query("SELECT 1").await }.await;
+            (spec.name, res.map(|_| started.elapsed()))
+        });
+    }
+
+    let mut results = BTreeMap::new();
+    while let Some(res) = set.join_next().await {
+        let (name, res) = res?;
+        results.insert(name, res);
+    }
+
+    let mut failed = 0;
+    for (name, res) in &results {
+        match res {
+            Ok(elapsed) => println!("{name}: ok ({}ms)", elapsed.as_millis()),
+            Err(e) => {
+                failed += 1;
+                println!("{name}: FAIL: {e:#}");
+            }
+        }
+    }
+    if failed > 0 {
+        bail!("{failed} of {} databases failed", results.len());
+    }
+    Ok(())
 }
 
 async fn connect(url: &str) -> Result<Arc<dyn Database>> {
